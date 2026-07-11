@@ -1,0 +1,741 @@
+// ============================================================================
+// HRMS Phase 1 — Prisma Schema (REVISED)
+// ============================================================================
+// This revision folds in the schema critique. Change markers:
+//   [T1]       resolved before first migration (expensive to retrofit)
+//   [T2]       cheap correctness fix
+//   DECISION:  a Tier-3 judgement call made by the lead; override freely
+//
+// Original design principles still hold (see 04_Data_Model_Phase1.md):
+//  1. organizationId on every table — tenant-ready, SaaS is a config flip.
+//  2. Payroll/salary data is append-only and versioned — corrections are new
+//     rows, not edits.
+//  3. statutoryRates is looked up by effectiveDate at calc time — NOT an FK.
+//  4. leaveApprovalSteps count is the single/multi-level toggle, not a branch.
+//
+// [T1-5] Delete policy: default posture is RESTRICT (fail loud — never let a
+// delete silently cascade through retention-critical data). Explicit onDelete
+// is set below on (a) retention-critical paths (Restrict) and (b) genuinely
+// cascade-safe children like sessions/approval steps. A DPA erasure is an
+// anonymize-in-place workflow, NOT a row delete — see DECISION on Employee.
+// ============================================================================
+
+generator client {
+  // Prisma 7: Rust-free client. moduleFormat="cjs" is required so the generated
+  // client is CommonJS and interoperates with NestJS's CommonJS runtime.
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  // Prisma 7: the connection URL now lives in prisma.config.ts (CLI/migrations)
+  // and is passed to the driver adapter at runtime — not declared here.
+  provider = "postgresql"
+}
+
+// ----------------------------------------------------------------------------
+// Enums
+// ----------------------------------------------------------------------------
+
+enum EmploymentType {
+  PERMANENT
+  CONTRACT
+  CASUAL
+  INTERN
+}
+
+enum EmploymentStatus {
+  ACTIVE
+  ON_LEAVE
+  SUSPENDED
+  EXITED
+}
+
+enum DocumentType {
+  ID_COPY
+  CONTRACT
+  CERTIFICATE
+  OTHER
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  ON_LEAVE
+}
+
+enum AttendanceSource {
+  MANUAL
+  BIOMETRIC // populated by CSV import in Phase 1; live ZK/Hikvision ingest later
+  APP
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ApprovalStepStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum SalaryComponentType {
+  ALLOWANCE
+  DEDUCTION_VOLUNTARY
+}
+
+enum StatutoryRateType {
+  PAYE_BAND
+  NSSF
+  SHIF
+  AHL
+}
+
+enum PayrollRunStatus {
+  DRAFT
+  PROCESSING
+  FINALIZED
+  PAID
+}
+
+// [T1-3] Distinguishes a normal monthly run from a correction run so an
+// adjustment is traceable back to the run it fixes (immutability requires this).
+enum PayrollRunType {
+  REGULAR
+  ADJUSTMENT
+}
+
+enum LawfulBasis {
+  CONSENT
+  CONTRACT
+  LEGAL_OBLIGATION
+  LEGITIMATE_INTEREST
+}
+
+enum DataSubjectRequestType {
+  ACCESS
+  CORRECTION
+  ERASURE
+}
+
+enum DataSubjectRequestStatus {
+  RECEIVED
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+}
+
+enum BreachStatus {
+  OPEN
+  CONTAINED
+  CLOSED
+}
+
+enum ExitReason {
+  RESIGNATION
+  TERMINATION
+  REDUNDANCY
+  RETIREMENT
+}
+
+// ----------------------------------------------------------------------------
+// Organization & Access
+// ----------------------------------------------------------------------------
+
+/// Tenant anchor. Every other table's organizationId references this.
+model Organization {
+  id              String   @id @default(uuid())
+  name            String
+  kraPin          String? // employer's own PIN — needed in cleartext for filings, not encrypted
+  physicalAddress String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt // [T2]
+
+  users                 User[]
+  departments           Department[]
+  jobTitles             JobTitle[]
+  employees             Employee[]
+  employeeDocuments     EmployeeDocument[]
+  attendanceRecords     AttendanceRecord[]
+  auditLogs             AuditLog[]
+  publicHolidays        PublicHoliday[]
+  leaveTypes            LeaveType[]
+  leaveBalances         LeaveBalance[]
+  leaveRequests         LeaveRequest[]
+  salaryStructures      SalaryStructure[]
+  retentionPolicies     RetentionPolicy[]
+  breachIncidents       BreachIncident[]
+  payrollRuns           PayrollRun[]
+  consentRecords        ConsentRecord[]
+  dataSubjectRequests   DataSubjectRequest[]
+  severanceCalculations SeveranceCalculation[]
+  roles                 Role[]
+
+  @@map("organizations")
+}
+
+/// Login identity. Distinct from Employee — admins/HR staff may not be
+/// employees of the org they administer.
+model User {
+  id             String    @id @default(uuid())
+  organizationId String
+  email          String
+  passwordHash   String
+  roleId         String
+  employeeId     String?   @unique
+  mfaEnabled     Boolean   @default(false)
+  mfaSecret      String? // [T1-4] TOTP secret (encrypted at app layer); null until MFA enrolled
+  mfaBackupCodes String[]  @default([]) // [T1-4] hashed one-time recovery codes
+  lastLoginAt    DateTime?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt // [T2]
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  role         Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  employee     Employee?    @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+
+  auditLogs            AuditLog[]
+  uploadedDocuments    EmployeeDocument[]
+  approvalSteps        LeaveApprovalStep[]
+  createdPayrollRuns   PayrollRun[]
+  generatedBankBatches BankExportBatch[]
+  calculatedSeverances SeveranceCalculation[]
+  sessions             Session[] // [T1-4]
+
+  // DECISION: email scoped-unique per org, NOT globally unique. Keeps the
+  // "multi-tenant is a config flip" promise honest — two tenants could
+  // legitimately use the same email as separate logins. Override to a global
+  // @unique if you want one-email-one-login forever.
+  @@unique([organizationId, email])
+  @@index([organizationId])
+  @@map("users")
+}
+
+/// [T1-4] Refresh-token / session store. Without this there is no way to
+/// revoke a session or implement real logout. DB table (not Redis) keeps the
+/// client's self-hostable Compose stack to two services.
+model Session {
+  id               String    @id @default(uuid())
+  userId           String
+  refreshTokenHash String    @unique // store a hash, never the raw token
+  userAgent        String?
+  ipAddress        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+/// permissions kept as JSONB for Phase 1 flexibility.
+/// Default seed roles: Admin, HR Officer, Manager, Employee.
+model Role {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  permissions    Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt // [T2]
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  users        User[]
+
+  @@unique([organizationId, name]) // [T2] no two "Admin" roles in one org
+  @@index([organizationId])
+  @@map("roles")
+}
+
+/// Append-only. Written by a shared interceptor across every module.
+/// [T1-5] userId is nullable + SetNull so anonymising/removing a user never
+/// destroys the audit trail — the log survives, it just loses the actor link.
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String?
+  action         String
+  entityType     String
+  entityId       String
+  beforeState    Json?
+  afterState     Json?
+  ipAddress      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([userId])
+  @@index([organizationId, createdAt]) // [T2] powers "recent activity in this org"
+  @@map("audit_logs")
+  // NOTE: revoke UPDATE/DELETE on this table from the app DB role in a manual
+  // migration — application-level "append only" is not a real control.
+}
+
+// ----------------------------------------------------------------------------
+// Employees
+// ----------------------------------------------------------------------------
+
+model Department {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  name               String
+  parentDepartmentId String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt // [T2]
+
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  parentDepartment Department?  @relation("DepartmentHierarchy", fields: [parentDepartmentId], references: [id], onDelete: Restrict)
+  subDepartments   Department[] @relation("DepartmentHierarchy")
+  employees        Employee[]
+
+  @@index([organizationId])
+  @@index([parentDepartmentId]) // [T2] walk the org hierarchy without a scan
+  @@map("departments")
+}
+
+model JobTitle {
+  id             String   @id @default(uuid())
+  organizationId String
+  title          String
+  grade          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt // [T2]
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employees    Employee[]
+
+  @@index([organizationId])
+  @@map("job_titles")
+}
+
+/// employmentType directly drives NSSF/statutory eligibility — always explicit.
+///
+/// [T1-1] Sensitive identifiers (nationalId, kraPin, bankAccountNumber) are
+/// stored as app-layer ciphertext. Because you cannot index/search ciphertext,
+/// each searchable identifier gets a companion deterministic HMAC column that
+/// IS indexed and searched on (blind index). bankAccountNumber is encrypted but
+/// not searchable, so it needs no HMAC.
+///
+/// DECISION: no deletedAt / soft-delete. A DPA erasure is an anonymise-in-place
+/// workflow (scrub PII fields, keep the row) so payslips/audit stay
+/// referentially intact through their 5–7yr retention. Soft-delete would leave
+/// the PII sitting in the row, which defeats the erasure.
+model Employee {
+  id                String           @id @default(uuid())
+  organizationId    String
+  employeeNumber    String
+  firstName         String
+  lastName          String
+  nationalId        String // [T1-1] ciphertext
+  nationalIdHmac    String // [T1-1] blind index for lookup
+  kraPin            String? // [T1-1] ciphertext
+  kraPinHmac        String? // [T1-1] blind index for lookup
+  phone             String?
+  email             String?
+  dateOfBirth       DateTime?        @db.Date // [T1-2]
+  gender            String?
+  departmentId      String?
+  jobTitleId        String?
+  employmentType    EmploymentType
+  employmentStatus  EmploymentStatus @default(ACTIVE)
+  hireDate          DateTime         @db.Date // [T1-2]
+  exitDate          DateTime?        @db.Date // [T1-2]
+  bankName          String?
+  bankAccountNumber String? // [T1-1] ciphertext, not searchable → no HMAC
+  nextOfKin         Json?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  jobTitle     JobTitle?    @relation(fields: [jobTitleId], references: [id], onDelete: SetNull)
+
+  user                  User?
+  documents             EmployeeDocument[]
+  attendanceRecords     AttendanceRecord[]
+  leaveBalances         LeaveBalance[]
+  leaveRequests         LeaveRequest[]
+  salaryStructures      SalaryStructure[]
+  payslips              Payslip[]
+  consentRecords        ConsentRecord[]
+  dataSubjectRequests   DataSubjectRequest[]
+  severanceCalculations SeveranceCalculation[]
+
+  @@unique([organizationId, employeeNumber])
+  @@index([nationalIdHmac]) // [T1-1] was nationalId
+  @@index([kraPinHmac]) // [T1-1] was kraPin
+  @@index([departmentId])
+  @@index([jobTitleId]) // [T2] headcount-by-title reporting
+  @@index([employmentStatus])
+  @@map("employees")
+}
+
+/// isSensitive flags DPA "sensitive personal data" documents for stricter
+/// access logging. [T1-5] employee docs are retained — never cascade-delete.
+model EmployeeDocument {
+  id             String       @id @default(uuid())
+  organizationId String
+  employeeId     String
+  documentType   DocumentType
+  filePath       String
+  uploadedById   String
+  uploadedAt     DateTime     @default(now())
+  isSensitive    Boolean      @default(false)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  uploadedBy   User         @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([employeeId])
+  @@map("employee_documents")
+}
+
+// ----------------------------------------------------------------------------
+// Attendance & Leave
+// ----------------------------------------------------------------------------
+// Biometric note: AttendanceSource.BIOMETRIC is already supported. Phase 1
+// populates it via a CSV/Excel importer (from the device's own export). A live
+// ZK (ADMS push) / Hikvision (ISAPI event) ingest adapter + a devices registry
+// + a device_enrollments map get added in Phase 2 — no change to this table.
+
+model PublicHoliday {
+  id             String   @id @default(uuid())
+  organizationId String
+  date           DateTime @db.Date // [T1-2] a calendar day, not an instant
+  name           String
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([date])
+  @@map("public_holidays")
+}
+
+/// Composite index (employeeId, date) covers the most common query.
+model AttendanceRecord {
+  id             String           @id @default(uuid())
+  organizationId String
+  employeeId     String
+  date           DateTime         @db.Date // [T1-2]
+  clockIn        DateTime? // instant — keep full timestamp
+  clockOut       DateTime? // instant — keep full timestamp
+  status         AttendanceStatus
+  source         AttendanceSource @default(MANUAL)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([employeeId, date])
+  @@map("attendance_records")
+}
+
+model LeaveType {
+  id               String   @id @default(uuid())
+  organizationId   String
+  name             String
+  isPaid           Boolean  @default(true)
+  requiresApproval Boolean  @default(true)
+  maxDaysPerYear   Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt // [T2]
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  leaveBalances LeaveBalance[]
+  leaveRequests LeaveRequest[]
+
+  @@unique([organizationId, name]) // [T2]
+  @@map("leave_types")
+}
+
+model LeaveBalance {
+  id              String   @id @default(uuid())
+  organizationId  String
+  employeeId      String
+  leaveTypeId     String
+  year            Int
+  accruedDays     Decimal  @db.Decimal(5, 2)
+  usedDays        Decimal  @default(0) @db.Decimal(5, 2)
+  carriedOverDays Decimal  @default(0) @db.Decimal(5, 2) // DECISION: Kenyan annual leave carries over; model it explicitly
+  updatedAt       DateTime @updatedAt // [T2]
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  leaveType    LeaveType    @relation(fields: [leaveTypeId], references: [id], onDelete: Restrict)
+
+  @@unique([employeeId, leaveTypeId, year])
+  @@index([organizationId])
+  @@map("leave_balances")
+}
+
+model LeaveRequest {
+  id             String             @id @default(uuid())
+  organizationId String
+  employeeId     String
+  leaveTypeId    String
+  startDate      DateTime           @db.Date // [T1-2]
+  endDate        DateTime           @db.Date // [T1-2]
+  daysRequested  Decimal            @db.Decimal(5, 2)
+  status         LeaveRequestStatus @default(PENDING)
+  reason         String?
+  createdAt      DateTime           @default(now())
+
+  organization  Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee      Employee            @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  leaveType     LeaveType           @relation(fields: [leaveTypeId], references: [id], onDelete: Restrict)
+  approvalSteps LeaveApprovalStep[]
+
+  @@index([organizationId])
+  @@index([employeeId])
+  @@index([status])
+  @@map("leave_requests")
+}
+
+/// Row count here is the single/multi-level approval toggle — the approval
+/// logic reads this table the same way regardless of how many rows exist.
+model LeaveApprovalStep {
+  id             String             @id @default(uuid())
+  leaveRequestId String
+  stepOrder      Int
+  approverUserId String
+  status         ApprovalStepStatus @default(PENDING)
+  actedAt        DateTime?
+
+  leaveRequest LeaveRequest @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade) // [T1-5] steps belong to their request
+  approver     User         @relation(fields: [approverUserId], references: [id], onDelete: Restrict)
+
+  @@index([leaveRequestId])
+  @@index([approverUserId]) // [T2] powers the "awaiting my approval" inbox
+  @@map("leave_approval_steps")
+}
+
+// ----------------------------------------------------------------------------
+// Payroll
+// ----------------------------------------------------------------------------
+
+/// Versioned by effectiveDate/endDate — never overwrite a salary.
+model SalaryStructure {
+  id             String    @id @default(uuid())
+  organizationId String
+  employeeId     String
+  basicSalary    Decimal   @db.Decimal(12, 2)
+  effectiveDate  DateTime  @db.Date // [T1-2]
+  endDate        DateTime? @db.Date // [T1-2]
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     Employee          @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  components    SalaryComponent[]
+
+  @@index([organizationId])
+  @@index([employeeId])
+  @@map("salary_structures")
+}
+
+model SalaryComponent {
+  id                String              @id @default(uuid())
+  salaryStructureId String
+  componentType     SalaryComponentType
+  name              String
+  amount            Decimal             @db.Decimal(12, 2)
+  isTaxable         Boolean             @default(true)
+
+  salaryStructure SalaryStructure @relation(fields: [salaryStructureId], references: [id], onDelete: Cascade) // [T1-5] components belong to their structure
+
+  @@index([salaryStructureId])
+  @@map("salary_components")
+}
+
+/// Keeps the system correct as Kenyan rates change: INSERT a new row with a new
+/// effectiveDate; a run uses whichever row was effective on its run date.
+/// No organizationId — rates are national. No FK from PayrollRun — by design.
+model StatutoryRate {
+  id            String            @id @default(uuid())
+  rateType      StatutoryRateType
+  effectiveDate DateTime          @db.Date // [T1-2]
+  parameters    Json // NOTE: validate JSON shape per rateType in the payroll engine (versioned validator)
+
+  @@index([rateType, effectiveDate])
+  @@map("statutory_rates")
+}
+
+/// [T1-3] Once FINALIZED, immutable in app logic AND enforced by a DB trigger
+/// (added in a manual migration). Corrections are a new ADJUSTMENT run linked
+/// back via correctsRunId — never an edit to the finalized row.
+model PayrollRun {
+  id             String           @id @default(uuid())
+  organizationId String
+  periodMonth    Int
+  periodYear     Int
+  status         PayrollRunStatus @default(DRAFT)
+  runType        PayrollRunType   @default(REGULAR) // [T1-3]
+  correctsRunId  String? // [T1-3] set only on ADJUSTMENT runs
+  runDate        DateTime         @default(now()) // execution instant — keep full timestamp
+  createdById    String
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  correctsRun PayrollRun?  @relation("PayrollAdjustments", fields: [correctsRunId], references: [id], onDelete: Restrict) // [T1-3]
+  adjustments PayrollRun[] @relation("PayrollAdjustments")
+
+  payslips          Payslip[]
+  bankExportBatches BankExportBatch[]
+
+  @@index([organizationId, periodYear, periodMonth])
+  @@map("payroll_runs")
+  // [T1-3] Add via manual migration — one REGULAR run per period, but
+  // adjustments may reuse the period (partial unique index):
+  //   CREATE UNIQUE INDEX one_regular_run_per_period
+  //   ON payroll_runs (organization_id, period_year, period_month)
+  //   WHERE run_type = 'REGULAR';
+}
+
+/// oneThirdRulePass computed + stored at generation. false blocks finalization.
+model Payslip {
+  id               String   @id @default(uuid())
+  payrollRunId     String
+  employeeId       String
+  grossPay         Decimal  @db.Decimal(12, 2)
+  paye             Decimal  @db.Decimal(12, 2)
+  nssfEmployee     Decimal  @db.Decimal(12, 2)
+  nssfEmployer     Decimal  @db.Decimal(12, 2)
+  shif             Decimal  @db.Decimal(12, 2)
+  ahlEmployee      Decimal  @db.Decimal(12, 2)
+  ahlEmployer      Decimal  @db.Decimal(12, 2)
+  otherDeductions  Decimal  @default(0) @db.Decimal(12, 2)
+  netPay           Decimal  @db.Decimal(12, 2)
+  oneThirdRulePass Boolean
+  pdfPath          String?
+  createdAt        DateTime @default(now())
+
+  payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Restrict)
+  employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Restrict) // [T1-5] retained payroll record
+
+  @@index([payrollRunId, employeeId])
+  @@index([employeeId]) // [T2] payslip history / severance inputs per employee
+  @@map("payslips")
+}
+
+model BankExportBatch {
+  id            String   @id @default(uuid())
+  payrollRunId  String
+  filePath      String
+  generatedAt   DateTime @default(now())
+  generatedById String
+
+  payrollRun  PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Restrict)
+  generatedBy User       @relation(fields: [generatedById], references: [id], onDelete: Restrict)
+
+  @@index([payrollRunId]) // [T2]
+  @@map("bank_export_batches")
+}
+
+// ----------------------------------------------------------------------------
+// Compliance
+// ----------------------------------------------------------------------------
+
+model ConsentRecord {
+  id             String      @id @default(uuid())
+  organizationId String
+  employeeId     String
+  purpose        String
+  lawfulBasis    LawfulBasis
+  grantedAt      DateTime    @default(now())
+  withdrawnAt    DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([employeeId])
+  @@map("consent_records")
+}
+
+/// dueDate = submittedAt + 30 days, set programmatically. Index powers the
+/// "overdue requests" alert — the core operational value of this table.
+model DataSubjectRequest {
+  id             String                   @id @default(uuid())
+  organizationId String
+  employeeId     String
+  requestType    DataSubjectRequestType
+  status         DataSubjectRequestStatus @default(RECEIVED)
+  submittedAt    DateTime                 @default(now()) // instant
+  dueDate        DateTime                 @db.Date // [T1-2] a calendar SLA deadline
+  resolvedAt     DateTime? // instant
+  notes          String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([employeeId])
+  @@index([dueDate])
+  @@map("data_subject_requests")
+}
+
+model RetentionPolicy {
+  id                    String   @id @default(uuid())
+  organizationId        String
+  recordType            String
+  retentionPeriodMonths Int
+  legalBasisNote        String?
+  updatedAt             DateTime @updatedAt // [T2]
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, recordType]) // [T2] one policy per record type
+  @@map("retention_policies")
+}
+
+/// odpcNotifiedAt vs detectedAt proves 72-hour compliance at a glance — these
+/// stay full DateTime (not @db.Date) precisely because the window is to the hour.
+model BreachIncident {
+  id                    String       @id @default(uuid())
+  organizationId        String
+  detectedAt            DateTime
+  description           String
+  affectedEmployeeCount Int
+  odpcNotifiedAt        DateTime?
+  employeesNotifiedAt   DateTime?
+  status                BreachStatus @default(OPEN)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId]) // [T2]
+  @@map("breach_incidents")
+}
+
+/// calculationBreakdown stores full formula inputs/outputs — critical if a
+/// severance amount is ever disputed or audited.
+model SeveranceCalculation {
+  id                   String     @id @default(uuid())
+  organizationId       String
+  employeeId           String
+  exitDate             DateTime   @db.Date // [T1-2]
+  reason               ExitReason
+  noticePeriodDays     Int
+  severanceAmount      Decimal    @db.Decimal(12, 2)
+  calculationBreakdown Json
+  calculatedById       String
+  createdAt            DateTime   @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  calculatedBy User         @relation(fields: [calculatedById], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([employeeId])
+  @@map("severance_calculations")
+}

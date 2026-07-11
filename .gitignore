@@ -1,0 +1,20 @@
+node_modules/
+dist/
+build/
+apps/*/src/generated/
+apps/api/cpanel-bundle.zip
+apps/api/.cpanel-bundle/
+.env
+.env.local
+.env.*.local
+*.log
+npm-debug.log*
+coverage/
+.DS_Store
+
+# ---- Local scratch / test artifacts / PII (never commit) ----
+/login.json
+/att.csv
+/*.pdf
+apps/api/storage/
+apps/api/src/generated/

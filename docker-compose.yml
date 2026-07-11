@@ -1,0 +1,40 @@
+# Single-tenant deployment: one Postgres + one API per client.
+# `docker compose up --build` brings up the stack; the API waits for a
+# healthy database, applies migrations, then serves on :3000.
+services:
+  db:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hrms
+      POSTGRES_PASSWORD: hrms
+      POSTGRES_DB: hrms
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hrms -d hrms"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./apps/api
+    restart: unless-stopped
+    env_file:
+      - ./apps/api/.env
+    environment:
+      # Inside the compose network the DB host is the service name "db",
+      # overriding the localhost URL used for local (non-Docker) development.
+      DATABASE_URL: postgresql://hrms:hrms@db:5432/hrms?schema=public
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+
+  # web:  # Stage: React frontend — added next.
+
+volumes:
+  db_data:

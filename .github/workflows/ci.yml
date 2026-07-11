@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Build + end-to-end verification
+    runs-on: ubuntu-latest
+
+    env:
+      NODE_ENV: test
+      PORT: '3000'
+      KEY_PROVIDER: env
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hrms
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hrms
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate app secrets (test-only)
+        run: |
+          {
+            echo "ENCRYPTION_KEY=$(openssl rand -base64 32)"
+            echo "HMAC_KEY=$(openssl rand -base64 32)"
+            echo "JWT_ACCESS_SECRET=$(openssl rand -base64 48)"
+            echo "JWT_REFRESH_SECRET=$(openssl rand -base64 48)"
+          } >> "$GITHUB_ENV"
+
+      - name: Push schema + generate client
+        working-directory: apps/api
+        run: npx prisma db push
+
+      - name: Build API
+        run: npm run api:build
+
+      - name: Seed base data + statutory rates
+        working-directory: apps/api
+        run: |
+          npm run seed
+          npm run seed:rates
+
+      - name: Apply immutability triggers
+        working-directory: apps/api
+        run: npm run db:immutability
+
+      - name: Start API and run verification suite
+        working-directory: apps/api
+        run: |
+          node dist/main.js > /tmp/api.log 2>&1 &
+          echo "Waiting for the API to accept connections..."
+          up=""
+          for i in $(seq 1 60); do
+            if curl -s -o /dev/null "http://localhost:3000/api/auth/me"; then up=1; echo "API is up (after ${i}s)"; break; fi
+            sleep 1
+          done
+          if [ -z "$up" ]; then echo "API failed to start"; cat /tmp/api.log; exit 1; fi
+
+          echo "::group::smoke"
+          npm run smoke
+          echo "::endgroup::"
+
+          echo "::group::finalize fixture"
+          bash scripts/ci-finalize-fixture.sh
+          echo "::endgroup::"
+
+          echo "::group::verify immutability"
+          npm run db:immutability:verify
+          echo "::endgroup::"
+
+          echo "::group::verify tenant isolation"
+          npm run verify:tenant
+          echo "::endgroup::"
+
+      - name: API logs on failure
+        if: failure()
+        run: cat /tmp/api.log || true
