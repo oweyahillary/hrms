@@ -8,10 +8,12 @@ import { PayrollRunsService } from './payroll-runs.service';
 import { PayslipPdfService } from './payslip-pdf.service';
 import { BankExportController } from './bank-export.controller';
 import { BankExportService } from './bank-export.service';
+import { P9Controller } from './p9.controller';
+import { P9Service } from './p9.service';
 
 @Module({
-  controllers: [StatutoryRatesController, PayrollController, PayrollRunsController, BankExportController],
-  providers: [StatutoryRatesService, PayrollService, PayrollRunsService, PayslipPdfService, BankExportService],
-  exports: [StatutoryRatesService, PayrollService, PayrollRunsService, PayslipPdfService, BankExportService],
+  controllers: [StatutoryRatesController, PayrollController, PayrollRunsController, BankExportController, P9Controller],
+  providers: [StatutoryRatesService, PayrollService, PayrollRunsService, PayslipPdfService, BankExportService, P9Service],
+  exports: [StatutoryRatesService, PayrollService, PayrollRunsService, PayslipPdfService, BankExportService, P9Service],
 })
 export class PayrollModule {}
