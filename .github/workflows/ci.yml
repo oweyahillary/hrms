@@ -112,6 +112,10 @@ jobs:
           npx ts-node scripts/verify-p9.ts
           echo "::endgroup::"
 
+          echo "::group::verify reports"
+          npx ts-node scripts/verify-reports.ts
+          echo "::endgroup::"
+
       - name: API logs on failure
         if: failure()
         run: cat /tmp/api.log || true
