@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PRISMA, type ExtendedPrismaClient } from '../prisma/prisma.service';
+import { renderRemittancePdf, renderPayrollSummaryPdf } from './reports-document';
 
 const r2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
@@ -167,5 +168,43 @@ export class ReportsService {
       .sort((a, b) => b.activeCount - a.activeCount);
 
     return { total, active: byStatus.ACTIVE, byStatus, activeByDepartment };
+  }
+
+  private async employerName(): Promise<string> {
+    const org = (await this.prisma.organization.findFirst({
+      select: { name: true },
+    } as never)) as unknown as { name: string } | null;
+    return org?.name ?? '';
+  }
+
+  async remittancePdf(year: number, month: number): Promise<{ buffer: Buffer; filename: string }> {
+    const data = await this.statutoryRemittance(year, month);
+    const buffer = await renderRemittancePdf({
+      employer: await this.employerName(),
+      period: data.period,
+      employeesPaid: data.employeesPaid,
+      items: data.items,
+      grandTotal: data.grandTotal,
+      generatedAt: new Date(),
+    });
+    return { buffer, filename: `statutory-remittance-${year}-${String(month).padStart(2, '0')}.pdf` };
+  }
+
+  async payrollSummaryPdf(year: number, month: number): Promise<{ buffer: Buffer; filename: string }> {
+    const d = await this.payrollSummary(year, month);
+    const buffer = await renderPayrollSummaryPdf({
+      employer: await this.employerName(),
+      period: d.period,
+      employeesPaid: d.employeesPaid,
+      grossPay: d.grossPay,
+      paye: d.paye,
+      nssf: d.nssf,
+      shif: d.shif,
+      ahl: d.ahl,
+      otherDeductions: d.otherDeductions,
+      netPay: d.netPay,
+      generatedAt: new Date(),
+    });
+    return { buffer, filename: `payroll-summary-${year}-${String(month).padStart(2, '0')}.pdf` };
   }
 }

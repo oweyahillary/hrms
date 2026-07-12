@@ -1,5 +1,6 @@
-import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query, Res, StreamableFile } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { ReportsService } from './reports.service';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
@@ -46,5 +47,29 @@ export class ReportsController {
   @Get('headcount') @Roles(...HR_MANAGEMENT_ROLES)
   headcount() {
     return this.reports.headcount();
+  }
+
+  @Get('statutory-remittance/pdf') @Roles(...HR_MANAGEMENT_ROLES)
+  async remittancePdf(
+    @Res({ passthrough: true }) res: Response,
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ): Promise<StreamableFile> {
+    const { year: y, month: m } = parsePeriod(year, month);
+    const { buffer, filename } = await this.reports.remittancePdf(y, m);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${filename}"` });
+    return new StreamableFile(buffer);
+  }
+
+  @Get('payroll-summary/pdf') @Roles(...HR_MANAGEMENT_ROLES)
+  async payrollSummaryPdf(
+    @Res({ passthrough: true }) res: Response,
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ): Promise<StreamableFile> {
+    const { year: y, month: m } = parsePeriod(year, month);
+    const { buffer, filename } = await this.reports.payrollSummaryPdf(y, m);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${filename}"` });
+    return new StreamableFile(buffer);
   }
 }
