@@ -10,8 +10,8 @@ export BASE_URL="${BASE_URL:-http://localhost:3000/api}"
 
 # Local scratch space for test downloads (git-ignored via .scratch/). Resolved
 # relative to this script so it works regardless of the current directory.
-export SCRATCH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.scratch" 2>/dev/null && pwd)"
-[ -n "$SCRATCH" ] || export SCRATCH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/.scratch"
+export SCRATCH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.scratch" 2>/dev/null && pwd)"
+[ -n "$SCRATCH" ] || export SCRATCH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/.scratch"
 mkdir -p "$SCRATCH" 2>/dev/null || true
 
 # Re-mint just the access token (call `refresh` anytime it expires).
