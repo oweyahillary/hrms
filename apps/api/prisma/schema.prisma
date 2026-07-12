@@ -104,6 +104,12 @@ enum PayrollRunStatus {
   PAID
 }
 
+enum LogoAlignment {
+  LEFT
+  CENTER
+  RIGHT
+}
+
 // [T1-3] Distinguishes a normal monthly run from a correction run so an
 // adjustment is traceable back to the run it fixes (immutability requires this).
 enum PayrollRunType {
@@ -163,6 +169,11 @@ model Organization {
   name            String
   kraPin          String? // employer's own PIN — needed in cleartext for filings, not encrypted
   physicalAddress String?
+  // Branding for payslips and other generated documents.
+  registrationNumber String?
+  payslipNotice      String? // optional statutory/custom line shown on payslips
+  logoPath           String? // stored relative path to the org logo (PNG/JPEG)
+  logoAlignment      LogoAlignment @default(LEFT)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt // [T2]
 

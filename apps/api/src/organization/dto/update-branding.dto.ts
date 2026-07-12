@@ -1,0 +1,22 @@
+import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+
+/** All fields optional — a PATCH updates only what is provided. */
+export class UpdateBrandingDto {
+  @IsOptional() @IsString() @MaxLength(200)
+  name?: string;
+
+  @IsOptional() @IsString() @MaxLength(60)
+  kraPin?: string;
+
+  @IsOptional() @IsString() @MaxLength(300)
+  physicalAddress?: string;
+
+  @IsOptional() @IsString() @MaxLength(100)
+  registrationNumber?: string;
+
+  @IsOptional() @IsString() @MaxLength(300)
+  payslipNotice?: string;
+
+  @IsOptional() @IsIn(['LEFT', 'CENTER', 'RIGHT'])
+  logoAlignment?: 'LEFT' | 'CENTER' | 'RIGHT';
+}

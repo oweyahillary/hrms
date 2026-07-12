@@ -31,7 +31,7 @@ async function main(): Promise<void> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'admin@example.com', password: 'ChangeMe123!' }),
   });
-  const token = (await login.json())?.accessToken as string | undefined;
+  const token = ((await login.json()) as { accessToken?: string }).accessToken;
   if (!token) {
     console.log('  FAIL  login — no access token');
     process.exit(1);
@@ -50,7 +50,7 @@ async function main(): Promise<void> {
       nationalId: nid, employmentType: 'PERMANENT', hireDate: '2026-01-01',
     }),
   });
-  const employeeId = (await empRes.json())?.id as string | undefined;
+  const employeeId = ((await empRes.json()) as { id?: string }).id;
   if (!employeeId) { console.log('  FAIL  employee create'); process.exit(1); }
 
   await fetch(`${BASE}/employees/${employeeId}/salary-structures`, {
@@ -67,26 +67,29 @@ async function main(): Promise<void> {
     headers: authJson,
     body: JSON.stringify({ periodMonth: 6, periodYear: 2031, employeeIds: [employeeId] }),
   });
-  const runId = (await runRes.json())?.id as string | undefined;
+  const runId = ((await runRes.json()) as { id?: string }).id;
   if (!runId) { console.log('  FAIL  run create'); process.exit(1); }
 
   // 3. Finalize (auto-generates PDFs, best-effort, after commit).
   const finRes = await fetch(`${BASE}/payroll/runs/${runId}/finalize`, { method: 'POST', headers: auth });
-  const finalized = await finRes.json();
-  const finReady = finalized?.pdfStatus?.ready ?? 0;
-  const finTotal = finalized?.pdfStatus?.total ?? 0;
+  const finalized = (await finRes.json()) as {
+    pdfStatus?: { ready?: number; total?: number };
+    payslips?: Array<{ id?: string }>;
+  };
+  const finReady = finalized.pdfStatus?.ready ?? 0;
+  const finTotal = finalized.pdfStatus?.total ?? 0;
   check('finalize auto-generated the payslip PDF (ready == total >= 1)',
     finTotal >= 1 && finReady === finTotal, `ready=${finReady} total=${finTotal}`);
 
-  const payslipId = finalized?.payslips?.[0]?.id as string | undefined;
+  const payslipId = finalized.payslips?.[0]?.id;
   if (!payslipId) { console.log('  FAIL  no payslip on finalized run'); process.exit(1); }
 
   // 4. Idempotent generate: re-running renders nothing new, reports all ready.
   const genRes = await fetch(`${BASE}/payroll/runs/${runId}/payslips/pdf`, { method: 'POST', headers: auth });
-  const gen = await genRes.json();
+  const gen = (await genRes.json()) as { total?: number; ready?: number; failed?: number };
   check('generate-missing is idempotent (ready == total, failed == 0)',
-    gen?.total >= 1 && gen?.ready === gen?.total && gen?.failed === 0,
-    `total=${gen?.total} ready=${gen?.ready} failed=${gen?.failed}`);
+    (gen.total ?? 0) >= 1 && gen.ready === gen.total && gen.failed === 0,
+    `total=${gen.total} ready=${gen.ready} failed=${gen.failed}`);
 
   // 5. Download returns a valid PDF.
   const dl = await fetch(`${BASE}/payroll/runs/${runId}/payslips/${payslipId}/pdf`, { headers: auth });
