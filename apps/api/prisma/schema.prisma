@@ -111,6 +111,15 @@ enum PayrollRunType {
   ADJUSTMENT
 }
 
+// [T2-PDF] Render lifecycle of a payslip's PDF artifact. The payroll figures are
+// frozen at finalize; the PDF is a downstream artifact that is generated after,
+// so its status is tracked separately (PENDING -> READY, or FAILED to retry).
+enum PayslipPdfStatus {
+  PENDING
+  READY
+  FAILED
+}
+
 enum LawfulBasis {
   CONSENT
   CONTRACT
@@ -618,6 +627,7 @@ model Payslip {
   netPay           Decimal  @db.Decimal(12, 2)
   oneThirdRulePass Boolean
   pdfPath          String?
+  pdfStatus        PayslipPdfStatus @default(PENDING)
   createdAt        DateTime @default(now())
 
   payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Restrict)

@@ -24,6 +24,37 @@ async function expectBlocked(client: Client, label: string, sql: string): Promis
   }
 }
 
+async function expectAllowed(client: Client, label: string, sql: string): Promise<void> {
+  try {
+    await client.query('BEGIN');
+    await client.query(sql);
+    await client.query('ROLLBACK'); // never persist — only prove it is permitted
+    console.log(`  PASS  ${label} — allowed`);
+    pass += 1;
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    console.log(`  FAIL  ${label} — unexpectedly blocked (${String((e as Error).message).split('\n')[0]})`);
+    fail += 1;
+  }
+}
+
+// Two-step: attach a pdfPath (allowed), then try to overwrite it (must be blocked).
+async function expectOverwriteBlocked(client: Client, payslipId: string): Promise<void> {
+  const label = 'overwrite an existing pdfPath on a finalized payslip';
+  try {
+    await client.query('BEGIN');
+    await client.query(`UPDATE payslips SET "pdfPath" = '/ci/first.pdf', "pdfStatus" = 'READY' WHERE id = '${payslipId}'`);
+    await client.query(`UPDATE payslips SET "pdfPath" = '/ci/second.pdf' WHERE id = '${payslipId}'`);
+    await client.query('ROLLBACK');
+    console.log(`  FAIL  ${label} — overwrite was ALLOWED`);
+    fail += 1;
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    console.log(`  PASS  ${label} — blocked (${String((e as Error).message).split('\n')[0]})`);
+    pass += 1;
+  }
+}
+
 async function main(): Promise<void> {
   const client = new Client({ connectionString: process.env.DATABASE_URL });
   await client.connect();
@@ -31,7 +62,9 @@ async function main(): Promise<void> {
     const fin = await client.query(
       `SELECT r.id AS run_id, p.id AS payslip_id
          FROM payroll_runs r JOIN payslips p ON p."payrollRunId" = r.id
-        WHERE r.status = 'FINALIZED' LIMIT 1`,
+        WHERE r.status = 'FINALIZED'
+        ORDER BY (p."pdfPath" IS NULL) DESC
+        LIMIT 1`,
     );
     if (fin.rowCount) {
       const runId = fin.rows[0].run_id as string;
@@ -45,6 +78,21 @@ async function main(): Promise<void> {
         `UPDATE payroll_runs SET status = 'DRAFT' WHERE id = '${runId}'`);
       await expectBlocked(client, 'DELETE a finalized run',
         `DELETE FROM payroll_runs WHERE id = '${runId}'`);
+
+      // Phase 2: the narrow PDF-artifact exception on an otherwise-frozen payslip.
+      const cur = await client.query(`SELECT "pdfPath" FROM payslips WHERE id = '${payslipId}'`);
+      const hasPath = cur.rows[0]?.pdfPath != null;
+      if (!hasPath) {
+        await expectAllowed(client, 'attach pdfPath (NULL->value) + set pdfStatus READY',
+          `UPDATE payslips SET "pdfPath" = '/ci/probe.pdf', "pdfStatus" = 'READY' WHERE id = '${payslipId}'`);
+        await expectAllowed(client, 'set pdfStatus FAILED with no path (render-failed lifecycle)',
+          `UPDATE payslips SET "pdfStatus" = 'FAILED' WHERE id = '${payslipId}'`);
+        await expectBlocked(client, 'attach pdfPath WITH a figure change (netPay)',
+          `UPDATE payslips SET "pdfPath" = '/ci/x.pdf', "netPay" = "netPay" + 1 WHERE id = '${payslipId}'`);
+        await expectOverwriteBlocked(client, payslipId);
+      } else {
+        console.log('  SKIP  finalized payslip already has a pdfPath — attach-exception cases skipped');
+      }
     } else {
       console.log('  SKIP  no FINALIZED run found — finalize one, then re-run to test run/payslip guards');
     }

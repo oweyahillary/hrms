@@ -6,6 +6,7 @@ import { PRISMA, baseClientOf, type ExtendedPrismaClient } from '../prisma/prism
 import { toJsonSnapshot } from '../prisma/tenant-scope';
 import { getRequestContext } from '../common/context/request-context';
 import { StatutoryRatesService } from './statutory-rates.service';
+import { PayslipPdfService } from './payslip-pdf.service';
 import { assembleRateSet } from './rate-set';
 import { assemblePayslip, grossBasedOneThird } from './payslip-assembly';
 import { deriveStructureAmounts, pickEffectiveStructure, type ComponentInput } from '../salary/salary-math';
@@ -19,6 +20,7 @@ interface RunRow { id: string; periodMonth: number; periodYear: number; status: 
 interface PayslipRow {
   id: string; employeeId: string; grossPay: unknown; paye: unknown; nssfEmployee: unknown; nssfEmployer: unknown;
   shif: unknown; ahlEmployee: unknown; ahlEmployer: unknown; otherDeductions: unknown; netPay: unknown; oneThirdRulePass: boolean;
+  pdfStatus?: string;
 }
 type Skip = { employeeId: string; employeeNumber: string; reason: string };
 
@@ -27,6 +29,7 @@ export class PayrollRunsService {
   constructor(
     @Inject(PRISMA) private readonly prisma: ExtendedPrismaClient,
     private readonly rates: StatutoryRatesService,
+    private readonly pdf: PayslipPdfService,
   ) {}
 
   async create(dto: CreatePayrollRunDto, faultInject?: string) {
@@ -201,13 +204,17 @@ export class PayrollRunsService {
       runType: run.runType, correctsRunId: run.correctsRunId, runDate: run.runDate,
       payslipCount: payslips.length,
       oneThirdFailureEmployeeIds: payslips.filter((p) => !p.oneThirdRulePass).map((p) => p.employeeId),
+      pdfStatus: {
+        ready: payslips.filter((p) => p.pdfStatus === 'READY').length,
+        total: payslips.length,
+      },
       totals: Object.fromEntries(Object.entries(totals).map(([k, v]) => [k, round2(v)])),
       payslips,
       ...(skipped ? { skipped } : {}),
     };
   }
 
-  async finalize(id: string, override: boolean) {
+  async finalize(id: string, override: boolean, skipPdf = false) {
     const run = (await this.prisma.payrollRun.findFirst({
       where: { id } as never, include: { payslips: true },
     })) as unknown as RunRow | null;
@@ -221,6 +228,15 @@ export class PayrollRunsService {
       });
     }
     await this.prisma.payrollRun.update({ where: { id }, data: { status: 'FINALIZED' } as never });
+    // Render payslip PDFs eagerly, best-effort. The run is already finalized and
+    // committed; a render failure must never fail finalize. Retryable via the
+    // POST :id/payslips/pdf endpoint (idempotent). The skip flag is a test-only
+    // hook (ignored in production) used to leave a NULL-pdfPath finalized payslip
+    // for the immutability proof.
+    const honorSkip = skipPdf && process.env.NODE_ENV !== 'production';
+    if (!honorSkip) {
+      await this.pdf.generateMissingForRun(id).catch(() => undefined);
+    }
     return this.findOne(id);
   }
 
@@ -244,6 +260,7 @@ export class PayrollRunsService {
       otherDeductions: Number(p.otherDeductions), netPay,
       oneThirdRulePass: p.oneThirdRulePass,
       grossBasedOneThirdPass: grossBasedOneThird(netPay, grossPay),
+      pdfStatus: p.pdfStatus ?? 'PENDING',
     };
   }
 }
