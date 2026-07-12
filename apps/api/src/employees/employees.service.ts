@@ -42,6 +42,8 @@ export class EmployeesService {
       kraPinHmac: dto.kraPin ? this.crypto.blindIndex(dto.kraPin) : null,
       bankAccountNumber: dto.bankAccountNumber ? await this.crypto.encrypt(dto.bankAccountNumber) : null,
       bankName: dto.bankName ?? null,
+      bankCode: dto.bankCode ?? null,
+      bankBranchCode: dto.bankBranchCode ?? null,
       phone: dto.phone ?? null,
       email: dto.email ?? null,
       dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : null,
@@ -120,6 +122,8 @@ export class EmployeesService {
     assign('jobTitleId', dto.jobTitleId);
     assign('employmentType', dto.employmentType);
     assign('bankName', dto.bankName);
+    assign('bankCode', dto.bankCode);
+    assign('bankBranchCode', dto.bankBranchCode);
     if (dto.dateOfBirth !== undefined) data.dateOfBirth = new Date(dto.dateOfBirth);
     if (dto.hireDate !== undefined) data.hireDate = new Date(dto.hireDate);
     if (dto.nextOfKin !== undefined) data.nextOfKin = dto.nextOfKin;

@@ -26,3 +26,6 @@ apps/api/storage/
 apps/api/logo-check.png
 
 apps/api/branded.pdf
+
+apps/api/salary.csv
+apps/api/salary.xlsx

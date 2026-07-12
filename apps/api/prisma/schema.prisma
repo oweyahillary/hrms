@@ -110,6 +110,11 @@ enum LogoAlignment {
   RIGHT
 }
 
+enum BankExportFormat {
+  CSV
+  XLSX
+}
+
 // [T1-3] Distinguishes a normal monthly run from a correction run so an
 // adjustment is traceable back to the run it fixes (immutability requires this).
 enum PayrollRunType {
@@ -373,6 +378,8 @@ model Employee {
   exitDate          DateTime?        @db.Date // [T1-2]
   bankName          String?
   bankAccountNumber String? // [T1-1] ciphertext, not searchable → no HMAC
+  bankCode          String? // beneficiary bank code (public identifier, not sensitive)
+  bankBranchCode    String? // branch code for interbank/PesaLink files
   nextOfKin         Json?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
@@ -653,6 +660,8 @@ model BankExportBatch {
   id            String   @id @default(uuid())
   payrollRunId  String
   filePath      String
+  format        BankExportFormat
+  rowCount      Int      @default(0)
   generatedAt   DateTime @default(now())
   generatedById String
 
