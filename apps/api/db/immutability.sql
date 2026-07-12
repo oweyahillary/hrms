@@ -31,17 +31,33 @@ CREATE TRIGGER trg_payroll_runs_immutable
   BEFORE UPDATE OR DELETE ON payroll_runs
   FOR EACH ROW EXECUTE FUNCTION hrms_block_finalized_run_mutation();
 
--- 2) payslips: immutable (no UPDATE, no DELETE) once the parent run is FINALIZED.
+-- 2) payslips: frozen once the parent run is FINALIZED, EXCEPT the one-time PDF
+--    attach (pdfPath NULL->value) and pdfStatus lifecycle (see the function body).
 --    While the run is DRAFT, payslips may still be recomputed or discarded.
---    NOTE (Phase 2): attaching a generated payslip PDF sets pdfPath on a finalized
---    payslip — this trigger would block that write. Either generate the PDF before
---    finalizing, or add a targeted pdfPath-only (NULL->value) exception here.
 CREATE OR REPLACE FUNCTION hrms_block_finalized_payslip_mutation() RETURNS trigger AS $fn$
 DECLARE
   parent_status text;
 BEGIN
   SELECT status::text INTO parent_status FROM payroll_runs WHERE id = OLD."payrollRunId";
   IF parent_status = 'FINALIZED' THEN
+    -- Narrow exception: allow ONLY the PDF-artifact lifecycle on an otherwise frozen
+    -- payslip. pdfPath may go NULL->value ONCE (never overwrite or clear) and
+    -- pdfStatus may move within its lifecycle (PENDING/READY/FAILED). EVERY other
+    -- column must be byte-identical, so payroll figures can never change.
+    IF TG_OP = 'UPDATE'
+       AND (OLD."pdfPath" IS NULL OR NEW."pdfPath" IS NOT DISTINCT FROM OLD."pdfPath")
+       AND ROW(NEW.id, NEW."payrollRunId", NEW."employeeId", NEW."grossPay", NEW.paye,
+               NEW."nssfEmployee", NEW."nssfEmployer", NEW.shif, NEW."ahlEmployee",
+               NEW."ahlEmployer", NEW."otherDeductions", NEW."netPay",
+               NEW."oneThirdRulePass", NEW."createdAt")
+         IS NOT DISTINCT FROM
+           ROW(OLD.id, OLD."payrollRunId", OLD."employeeId", OLD."grossPay", OLD.paye,
+               OLD."nssfEmployee", OLD."nssfEmployer", OLD.shif, OLD."ahlEmployee",
+               OLD."ahlEmployer", OLD."otherDeductions", OLD."netPay",
+               OLD."oneThirdRulePass", OLD."createdAt")
+    THEN
+      RETURN NEW;
+    END IF;
     RAISE EXCEPTION 'payslips %: belongs to a FINALIZED run and is immutable (% blocked)', OLD.id, TG_OP
       USING ERRCODE = 'check_violation';
   END IF;
