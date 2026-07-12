@@ -19,4 +19,10 @@ export class UpdateBrandingDto {
 
   @IsOptional() @IsIn(['LEFT', 'CENTER', 'RIGHT'])
   logoAlignment?: 'LEFT' | 'CENTER' | 'RIGHT';
+
+  @IsOptional() @IsString() @MaxLength(40)
+  bankAccountNumber?: string;
+
+  @IsOptional() @IsString() @MaxLength(20)
+  bankPurposeCode?: string;
 }

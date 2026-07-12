@@ -49,6 +49,12 @@ export class CreateEmployeeDto {
   @IsOptional() @IsString() @MinLength(1)
   bankAccountNumber?: string;
 
+  @IsOptional() @IsString()
+  bankCode?: string;
+
+  @IsOptional() @IsString()
+  bankBranchCode?: string;
+
   @IsOptional() @IsObject()
   nextOfKin?: Record<string, unknown>;
 }
