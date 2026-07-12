@@ -108,6 +108,10 @@ jobs:
           npx ts-node scripts/verify-bank-export.ts
           echo "::endgroup::"
 
+          echo "::group::verify p9"
+          npx ts-node scripts/verify-p9.ts
+          echo "::endgroup::"
+
       - name: API logs on failure
         if: failure()
         run: cat /tmp/api.log || true
