@@ -104,6 +104,10 @@ jobs:
           npx ts-node scripts/verify-payslip-pdf.ts
           echo "::endgroup::"
 
+          echo "::group::verify bank export"
+          npx ts-node scripts/verify-bank-export.ts
+          echo "::endgroup::"
+
       - name: API logs on failure
         if: failure()
         run: cat /tmp/api.log || true

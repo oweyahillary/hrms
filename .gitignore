@@ -26,3 +26,16 @@ apps/api/storage/
 apps/api/logo-check.png
 
 apps/api/branded.pdf
+
+apps/api/salary.csv
+apps/api/salary.xlsx
+
+# downloaded test artifacts — never commit, anywhere
+**/salary.csv
+**/salary.xlsx
+**/logo-check.png
+**/branded.pdf
+**/payslip.pdf
+
+# --- local scratch space for test artifacts (downloads, generated samples) ---
+.scratch/

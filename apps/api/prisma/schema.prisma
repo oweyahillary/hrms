@@ -110,6 +110,16 @@ enum LogoAlignment {
   RIGHT
 }
 
+enum BankExportFormat {
+  CSV
+  XLSX
+}
+
+enum BankExportTemplate {
+  GENERIC
+  EFT
+}
+
 // [T1-3] Distinguishes a normal monthly run from a correction run so an
 // adjustment is traceable back to the run it fixes (immutability requires this).
 enum PayrollRunType {
@@ -174,6 +184,11 @@ model Organization {
   payslipNotice      String? // optional statutory/custom line shown on payslips
   logoPath           String? // stored relative path to the org logo (PNG/JPEG)
   logoAlignment      LogoAlignment @default(LEFT)
+  // Employer payment config for bank EFT/RTGS bulk files (the debit account
+  // salaries are paid from; purpose code is bank-assigned). Own-company data,
+  // not employee PII, so stored plaintext like the employer's own KRA PIN.
+  bankAccountNumber  String?
+  bankPurposeCode    String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt // [T2]
 
@@ -373,6 +388,8 @@ model Employee {
   exitDate          DateTime?        @db.Date // [T1-2]
   bankName          String?
   bankAccountNumber String? // [T1-1] ciphertext, not searchable → no HMAC
+  bankCode          String? // beneficiary bank code (public identifier, not sensitive)
+  bankBranchCode    String? // branch code for interbank/PesaLink files
   nextOfKin         Json?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
@@ -653,6 +670,9 @@ model BankExportBatch {
   id            String   @id @default(uuid())
   payrollRunId  String
   filePath      String
+  format        BankExportFormat
+  template      BankExportTemplate @default(GENERIC)
+  rowCount      Int      @default(0)
   generatedAt   DateTime @default(now())
   generatedById String
 
