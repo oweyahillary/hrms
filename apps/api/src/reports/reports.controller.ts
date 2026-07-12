@@ -33,4 +33,18 @@ export class ReportsController {
     const { year: y, month: m } = parsePeriod(year, month);
     return this.reports.statutoryRemittance(y, m);
   }
+
+  @Get('year-trend') @Roles(...HR_MANAGEMENT_ROLES)
+  yearTrend(@Query('year') year?: string) {
+    const y = Number(year);
+    if (!Number.isInteger(y) || y < 2000 || y > 2100) {
+      throw new BadRequestException('year must be a valid four-digit year');
+    }
+    return this.reports.yearTrend(y);
+  }
+
+  @Get('headcount') @Roles(...HR_MANAGEMENT_ROLES)
+  headcount() {
+    return this.reports.headcount();
+  }
 }

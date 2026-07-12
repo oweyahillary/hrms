@@ -86,4 +86,86 @@ export class ReportsService {
       grandTotal: r2(paye + nssfEe + nssfEr + shif + ahlEe + ahlEr),
     };
   }
+
+  /** Monthly gross/net/PAYE/statutory/headcount across a year — dashboard trend. */
+  async yearTrend(year: number) {
+    const runs = (await this.prisma.payrollRun.findMany({
+      where: { periodYear: year, status: 'FINALIZED' } as never,
+      select: { id: true, periodMonth: true },
+    } as never)) as unknown as Array<{ id: string; periodMonth: number }>;
+
+    const idsByMonth = new Map<number, string[]>();
+    for (const r of runs) {
+      const list = idsByMonth.get(r.periodMonth) ?? [];
+      list.push(r.id);
+      idsByMonth.set(r.periodMonth, list);
+    }
+
+    const months = [];
+    for (let m = 1; m <= 12; m += 1) {
+      const ids = idsByMonth.get(m) ?? [];
+      if (ids.length === 0) {
+        months.push({ month: m, employeesPaid: 0, grossPay: 0, paye: 0, statutory: 0, netPay: 0 });
+        continue;
+      }
+      const agg = (await this.prisma.payslip.aggregate({
+        where: { payrollRunId: { in: ids } } as never,
+        _sum: {
+          grossPay: true, paye: true, nssfEmployee: true, nssfEmployer: true, shif: true,
+          ahlEmployee: true, ahlEmployer: true, netPay: true,
+        },
+        _count: true,
+      } as never)) as unknown as { _sum: PeriodSums; _count: number };
+      const s = agg._sum;
+      const statutory = r2(
+        num(s.paye) + num(s.nssfEmployee) + num(s.nssfEmployer)
+        + num(s.shif) + num(s.ahlEmployee) + num(s.ahlEmployer),
+      );
+      months.push({
+        month: m,
+        employeesPaid: agg._count,
+        grossPay: r2(num(s.grossPay)),
+        paye: r2(num(s.paye)),
+        statutory,
+        netPay: r2(num(s.netPay)),
+      });
+    }
+
+    const totals = {
+      grossPay: r2(months.reduce((t, x) => t + x.grossPay, 0)),
+      paye: r2(months.reduce((t, x) => t + x.paye, 0)),
+      statutory: r2(months.reduce((t, x) => t + x.statutory, 0)),
+      netPay: r2(months.reduce((t, x) => t + x.netPay, 0)),
+    };
+    return { year, months, totals };
+  }
+
+  /** Current staffing snapshot: counts by status, and active headcount by department. */
+  async headcount() {
+    const byStatusRaw = (await this.prisma.employee.groupBy({
+      by: ['employmentStatus'], _count: true,
+    } as never)) as unknown as Array<{ employmentStatus: string; _count: number }>;
+
+    const byStatus: Record<string, number> = { ACTIVE: 0, ON_LEAVE: 0, SUSPENDED: 0, EXITED: 0 };
+    for (const g of byStatusRaw) byStatus[g.employmentStatus] = g._count;
+    const total = Object.values(byStatus).reduce((t, n) => t + n, 0);
+
+    const byDeptRaw = (await this.prisma.employee.groupBy({
+      by: ['departmentId'], where: { employmentStatus: 'ACTIVE' } as never, _count: true,
+    } as never)) as unknown as Array<{ departmentId: string | null; _count: number }>;
+
+    const depts = (await this.prisma.department.findMany({
+      select: { id: true, name: true },
+    } as never)) as unknown as Array<{ id: string; name: string }>;
+    const deptName = new Map(depts.map((d) => [d.id, d.name]));
+
+    const activeByDepartment = byDeptRaw
+      .map((g) => ({
+        department: g.departmentId ? (deptName.get(g.departmentId) ?? 'Unknown') : 'Unassigned',
+        activeCount: g._count,
+      }))
+      .sort((a, b) => b.activeCount - a.activeCount);
+
+    return { total, active: byStatus.ACTIVE, byStatus, activeByDepartment };
+  }
 }
