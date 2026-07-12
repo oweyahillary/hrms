@@ -62,7 +62,9 @@ async function main(): Promise<void> {
     const fin = await client.query(
       `SELECT r.id AS run_id, p.id AS payslip_id
          FROM payroll_runs r JOIN payslips p ON p."payrollRunId" = r.id
-        WHERE r.status = 'FINALIZED' LIMIT 1`,
+        WHERE r.status = 'FINALIZED'
+        ORDER BY (p."pdfPath" IS NULL) DESC
+        LIMIT 1`,
     );
     if (fin.rowCount) {
       const runId = fin.rows[0].run_id as string;

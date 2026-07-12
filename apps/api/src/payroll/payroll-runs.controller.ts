@@ -4,7 +4,6 @@ import { PayrollRunsService } from './payroll-runs.service';
 import { PayslipPdfService } from './payslip-pdf.service';
 import { CreatePayrollRunDto } from './dto/create-payroll-run.dto';
 import { CreateCorrectionDto } from './dto/create-correction.dto';
-import { FinalizeQueryDto } from './dto/finalize-query.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
 
@@ -29,8 +28,14 @@ export class PayrollRunsController {
   findOne(@Param('id') id: string) { return this.runs.findOne(id); }
 
   @Post(':id/finalize') @Roles(...HR_MANAGEMENT_ROLES)
-  finalize(@Param('id') id: string, @Query() q: FinalizeQueryDto) {
-    return this.runs.finalize(id, q.override === 'true');
+  finalize(
+    @Param('id') id: string,
+    @Query('override') override?: string,
+    // Test-only hook: skip the eager post-finalize PDF render so a NULL-pdfPath
+    // finalized payslip exists for the immutability proof. Ignored in production.
+    @Query('__skipPdf') skipPdf?: string,
+  ) {
+    return this.runs.finalize(id, override === 'true', skipPdf === 'true');
   }
 
   @Post(':id/correction') @Roles(...HR_MANAGEMENT_ROLES)

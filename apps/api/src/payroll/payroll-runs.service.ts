@@ -214,7 +214,7 @@ export class PayrollRunsService {
     };
   }
 
-  async finalize(id: string, override: boolean) {
+  async finalize(id: string, override: boolean, skipPdf = false) {
     const run = (await this.prisma.payrollRun.findFirst({
       where: { id } as never, include: { payslips: true },
     })) as unknown as RunRow | null;
@@ -230,8 +230,13 @@ export class PayrollRunsService {
     await this.prisma.payrollRun.update({ where: { id }, data: { status: 'FINALIZED' } as never });
     // Render payslip PDFs eagerly, best-effort. The run is already finalized and
     // committed; a render failure must never fail finalize. Retryable via the
-    // POST :id/payslips/pdf endpoint (idempotent).
-    await this.pdf.generateMissingForRun(id).catch(() => undefined);
+    // POST :id/payslips/pdf endpoint (idempotent). The skip flag is a test-only
+    // hook (ignored in production) used to leave a NULL-pdfPath finalized payslip
+    // for the immutability proof.
+    const honorSkip = skipPdf && process.env.NODE_ENV !== 'production';
+    if (!honorSkip) {
+      await this.pdf.generateMissingForRun(id).catch(() => undefined);
+    }
     return this.findOne(id);
   }
 

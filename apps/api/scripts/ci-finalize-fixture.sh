@@ -23,5 +23,5 @@ RID=$(curl -s -X POST "$BASE_URL/payroll/runs" -H "Authorization: Bearer $TOKEN"
   | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
 [ -n "$RID" ] || { echo "fixture: run create failed"; exit 1; }
 
-curl -s -X POST "$BASE_URL/payroll/runs/$RID/finalize" -H "Authorization: Bearer $TOKEN" >/dev/null
+curl -s -X POST "$BASE_URL/payroll/runs/$RID/finalize?__skipPdf=true" -H "Authorization: Bearer $TOKEN" >/dev/null
 echo "fixture: finalized run $RID (employee $EID)"
