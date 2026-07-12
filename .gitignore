@@ -36,3 +36,6 @@ apps/api/salary.xlsx
 **/logo-check.png
 **/branded.pdf
 **/payslip.pdf
+
+# --- local scratch space for test artifacts (downloads, generated samples) ---
+.scratch/
