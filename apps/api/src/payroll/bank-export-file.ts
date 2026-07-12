@@ -15,7 +15,17 @@ export interface BankPaymentRow {
   bankBranchCode?: string | null;
   amount: number;
   narration: string;
+  email?: string | null;
 }
+
+/** Employer-level fields the bank EFT/RTGS template requires. */
+export interface EmployerPaymentInfo {
+  debitAccount: string;
+  purposeCode: string;
+}
+
+/** Amounts at/above this use RTGS; below it use ACH (EFT). */
+export const RTGS_THRESHOLD = 1_000_000;
 
 const HEADERS = [
   'Employee No', 'Account Name', 'Account Number', 'Bank Name',
@@ -74,6 +84,68 @@ export async function buildSalaryXlsx(rows: BankPaymentRow[]): Promise<Buffer> {
     row.font = { name: 'Arial' };
   }
   ws.getColumn('amount').numFmt = '#,##0.00';
+
+  const buf = await wb.xlsx.writeBuffer();
+  return Buffer.from(buf as ArrayBuffer);
+}
+
+// ---------------------------------------------------------------------------
+// Bank EFT/RTGS bulk layout — matches the bank's "Bulk EFT/RTGS" template.
+// Columns (exact order): Beneficiary Name, Beneficiary Account Number, Bank
+// Code, Branch Code, Amount, Payment Currency, Payment Type, Debit Account
+// Number, Purpose of payments, Notes to Payee, Email Address.
+// ---------------------------------------------------------------------------
+const EFT_HEADERS = [
+  'Beneficiary Name', 'Beneficiary Account Number', 'Bank Code', 'Branch Code',
+  'Amount', 'Payment Currency', 'Payment Type', 'Debit Account Number',
+  'Purpose of payments', 'Notes to Payee', 'Email Address',
+];
+
+function paymentType(amount: number): 'ACH' | 'RTGS' {
+  return amount >= RTGS_THRESHOLD ? 'RTGS' : 'ACH';
+}
+
+function eftValues(r: BankPaymentRow, emp: EmployerPaymentInfo): Array<string | number | null> {
+  return [
+    r.accountName,
+    r.accountNumber,
+    r.bankCode ?? '',
+    r.bankBranchCode ?? '',
+    r.amount, // numeric in xlsx; formatted for csv below
+    'KES',
+    paymentType(r.amount),
+    emp.debitAccount,
+    emp.purposeCode,
+    r.narration,
+    r.email ?? '',
+  ];
+}
+
+export function buildEftCsv(rows: BankPaymentRow[], emp: EmployerPaymentInfo): string {
+  const lines = [EFT_HEADERS.map(csvField).join(',')];
+  for (const r of rows) {
+    const v = eftValues(r, emp);
+    v[4] = r.amount.toFixed(2); // amount as fixed-2 string in CSV
+    lines.push(v.map(csvField).join(','));
+  }
+  return lines.join('\r\n') + '\r\n';
+}
+
+export async function buildEftXlsx(rows: BankPaymentRow[], emp: EmployerPaymentInfo): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Bulk Payments');
+  ws.columns = EFT_HEADERS.map((h) => ({ header: h, width: h.length + 6 }));
+  ws.getRow(1).font = { name: 'Arial', bold: true };
+
+  // Text columns (1-based): account no(2), bank code(3), branch(4), debit acct(8),
+  // purpose(9) — keep as text so leading zeros / codes survive.
+  for (const c of [2, 3, 4, 8, 9]) ws.getColumn(c).numFmt = '@';
+
+  for (const r of rows) {
+    const row = ws.addRow(eftValues(r, emp));
+    row.font = { name: 'Arial' };
+  }
+  ws.getColumn(5).numFmt = '#,##0.00'; // Amount
 
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf as ArrayBuffer);

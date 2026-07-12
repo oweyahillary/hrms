@@ -20,6 +20,8 @@ interface OrgRow {
   payslipNotice: string | null;
   logoPath: string | null;
   logoAlignment: string;
+  bankAccountNumber: string | null;
+  bankPurposeCode: string | null;
 }
 
 const EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg' };
@@ -37,6 +39,7 @@ export class OrganizationService {
       select: {
         id: true, name: true, kraPin: true, physicalAddress: true,
         registrationNumber: true, payslipNotice: true, logoPath: true, logoAlignment: true,
+        bankAccountNumber: true, bankPurposeCode: true,
       },
     } as never)) as unknown as OrgRow | null;
     if (!org) throw new NotFoundException('Organization not found');
@@ -52,6 +55,8 @@ export class OrganizationService {
       registrationNumber: org.registrationNumber,
       payslipNotice: org.payslipNotice,
       logoAlignment: org.logoAlignment,
+      bankAccountNumber: org.bankAccountNumber,
+      bankPurposeCode: org.bankPurposeCode,
       hasLogo: org.logoPath != null,
     };
   }
@@ -63,7 +68,7 @@ export class OrganizationService {
   async updateBranding(orgId: string, dto: UpdateBrandingDto) {
     await this.load(orgId); // 404 if missing
     const data: Record<string, unknown> = {};
-    for (const k of ['name', 'kraPin', 'physicalAddress', 'registrationNumber', 'payslipNotice', 'logoAlignment'] as const) {
+    for (const k of ['name', 'kraPin', 'physicalAddress', 'registrationNumber', 'payslipNotice', 'logoAlignment', 'bankAccountNumber', 'bankPurposeCode'] as const) {
       if (dto[k] !== undefined) data[k] = dto[k];
     }
     const updated = (await this.prisma.organization.update({
@@ -72,6 +77,7 @@ export class OrganizationService {
       select: {
         id: true, name: true, kraPin: true, physicalAddress: true,
         registrationNumber: true, payslipNotice: true, logoPath: true, logoAlignment: true,
+        bankAccountNumber: true, bankPurposeCode: true,
       },
     } as never)) as unknown as OrgRow;
     return this.present(updated);

@@ -9,6 +9,7 @@ import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.deco
 import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
 
 type Format = 'CSV' | 'XLSX';
+type Template = 'GENERIC' | 'EFT';
 
 function parseFormats(q: string | undefined): Format[] {
   switch ((q ?? 'csv').toLowerCase()) {
@@ -16,6 +17,14 @@ function parseFormats(q: string | undefined): Format[] {
     case 'xlsx': return ['XLSX'];
     case 'both': return ['CSV', 'XLSX'];
     default: throw new BadRequestException("format must be one of: csv, xlsx, both");
+  }
+}
+
+function parseTemplate(q: string | undefined): Template {
+  switch ((q ?? 'generic').toLowerCase()) {
+    case 'generic': return 'GENERIC';
+    case 'eft': return 'EFT';
+    default: throw new BadRequestException("template must be one of: generic, eft");
   }
 }
 
@@ -30,8 +39,9 @@ export class BankExportController {
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
     @Query('format') format?: string,
+    @Query('template') template?: string,
   ) {
-    return this.bank.generate(id, parseFormats(format), user.userId);
+    return this.bank.generate(id, parseTemplate(template), parseFormats(format), user.userId);
   }
 
   @Get(':id/bank-exports') @Roles(...HR_MANAGEMENT_ROLES)
