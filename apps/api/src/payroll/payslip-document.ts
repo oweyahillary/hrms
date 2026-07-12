@@ -6,7 +6,14 @@ import PDFDocument from 'pdfkit';
  * payslip record — this document never recomputes payroll.
  */
 export interface PayslipDocumentData {
-  employer: { name: string; kraPin?: string | null; address?: string | null };
+  employer: {
+    name: string;
+    kraPin?: string | null;
+    address?: string | null;
+    registrationNumber?: string | null;
+    notice?: string | null;
+    logo?: { buffer: Buffer; alignment: 'LEFT' | 'CENTER' | 'RIGHT' } | null;
+  };
   employee: { fullName: string; employeeNumber: string; kraPin?: string | null };
   period: { month: number; year: number; runType: string };
   earnings: { grossPay: number };
@@ -64,15 +71,50 @@ export function renderPayslipPdf(data: PayslipDocumentData): Promise<Buffer> {
     doc.y = y + (o.h ?? 15);
   };
 
-  // Title + employer
-  doc.font('Helvetica-Bold').fontSize(18).fillColor('#111111').text('PAYSLIP', L, 50, { width: W, align: 'right' });
-  doc.font('Helvetica-Bold').fontSize(14).fillColor('#111111').text(data.employer.name, L, 50, { width: 300 });
+  // --- Branding header: logo (aligned per org setting) + employer identity ---
+  const align = data.employer.logo?.alignment ?? 'LEFT';
+  const textAlign: 'left' | 'center' | 'right' =
+    align === 'CENTER' ? 'center' : align === 'RIGHT' ? 'right' : 'left';
+
+  let headerY = 50;
+  // Logo is fail-soft: embed only if a valid PNG/JPEG buffer decodes; any
+  // failure falls through to a text-only header without throwing. pdfkit's
+  // fit box caps the size and its align option handles LEFT/CENTER/RIGHT.
+  if (data.employer.logo?.buffer) {
+    try {
+      const boxH = 60;
+      const opts: { fit: [number, number]; align?: 'center' | 'right' } = { fit: [W, boxH] };
+      if (align === 'CENTER') opts.align = 'center';
+      else if (align === 'RIGHT') opts.align = 'right';
+      doc.image(data.employer.logo.buffer, L, headerY, opts);
+      headerY += boxH + 6;
+    } catch {
+      // corrupt/unsupported image — ignore and render text only
+    }
+  }
+
+  // Employer identity, aligned as a block across the full content width.
+  doc.font('Helvetica-Bold').fontSize(14).fillColor('#111111')
+    .text(data.employer.name, L, headerY, { width: W, align: textAlign });
   doc.font('Helvetica').fontSize(9).fillColor('#444444');
-  if (data.employer.kraPin) doc.text('KRA PIN: ' + data.employer.kraPin, L, doc.y, { width: 300 });
-  if (data.employer.address) doc.text(data.employer.address, L, doc.y, { width: 300 });
-  doc.y += 8;
+  if (data.employer.kraPin) doc.text('KRA PIN: ' + data.employer.kraPin, L, doc.y, { width: W, align: textAlign });
+  if (data.employer.registrationNumber) {
+    doc.text('Reg. No: ' + data.employer.registrationNumber, L, doc.y, { width: W, align: textAlign });
+  }
+  if (data.employer.address) doc.text(data.employer.address, L, doc.y, { width: W, align: textAlign });
+  const notice = (data.employer.notice ?? '').trim();
+  if (notice) {
+    doc.font('Helvetica-Oblique').fontSize(8).fillColor('#666666').text(notice, L, doc.y + 2, { width: W, align: textAlign });
+  }
+  doc.x = L;
+  doc.y += 10;
   rule(doc.y);
-  doc.y += 8;
+  doc.y += 6;
+
+  // Centered title, decoupled from logo position so it never collides.
+  doc.font('Helvetica-Bold').fontSize(16).fillColor('#111111').text('PAYSLIP', L, doc.y, { width: W, align: 'center' });
+  doc.x = L;
+  doc.y += 10;
 
   // Employee + period (two columns)
   const topY = doc.y;

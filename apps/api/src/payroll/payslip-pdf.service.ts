@@ -11,7 +11,15 @@ interface RunWithOrg {
   periodYear: number;
   status: string;
   runType: string;
-  organization: { name: string; kraPin: string | null; physicalAddress: string | null };
+  organization: {
+    name: string;
+    kraPin: string | null;
+    physicalAddress: string | null;
+    registrationNumber: string | null;
+    payslipNotice: string | null;
+    logoPath: string | null;
+    logoAlignment: string;
+  };
   payslips: Array<{
     id: string; employeeId: string; grossPay: unknown; paye: unknown;
     nssfEmployee: unknown; nssfEmployer: unknown; shif: unknown; ahlEmployee: unknown;
@@ -42,7 +50,12 @@ export class PayslipPdfService {
     const run = (await this.prisma.payrollRun.findFirst({
       where: { id: runId } as never,
       include: {
-        organization: { select: { name: true, kraPin: true, physicalAddress: true } },
+        organization: {
+          select: {
+            name: true, kraPin: true, physicalAddress: true,
+            registrationNumber: true, payslipNotice: true, logoPath: true, logoAlignment: true,
+          },
+        },
         payslips: true,
       },
     } as never)) as unknown as RunWithOrg | null;
@@ -54,6 +67,18 @@ export class PayslipPdfService {
     const payslips = run.payslips ?? [];
     let ready = payslips.filter((p) => p.pdfStatus === 'READY').length;
     let failed = 0;
+
+    // Resolve the org logo once (fail-soft); shared by every payslip in the run.
+    let logo: { buffer: Buffer; alignment: 'LEFT' | 'CENTER' | 'RIGHT' } | null = null;
+    if (run.organization.logoPath) {
+      try {
+        const buffer = await this.storage.read(run.organization.logoPath);
+        const a = run.organization.logoAlignment;
+        logo = { buffer, alignment: a === 'CENTER' || a === 'RIGHT' ? a : 'LEFT' };
+      } catch {
+        logo = null; // missing/unreadable logo → text-only header
+      }
+    }
 
     for (const p of payslips) {
       if (p.pdfStatus === 'READY') continue;
@@ -70,6 +95,9 @@ export class PayslipPdfService {
             name: run.organization.name,
             kraPin: run.organization.kraPin,
             address: run.organization.physicalAddress,
+            registrationNumber: run.organization.registrationNumber,
+            notice: run.organization.payslipNotice,
+            logo,
           },
           employee: {
             fullName: `${emp.firstName} ${emp.lastName}`.trim(),
