@@ -4,6 +4,12 @@ export const ALLOWED_UPLOAD_MIME: ReadonlySet<string> = new Set([
 ]);
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
 
+/** Logo uploads: raster images only (pdfkit embeds PNG/JPEG, not SVG), capped small. */
+export const ALLOWED_LOGO_MIME: ReadonlySet<string> = new Set([
+  'image/png', 'image/jpeg',
+]);
+export const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
+
 const EXT_MIME: Record<string, string> = {
   '.pdf': 'application/pdf',
   '.jpg': 'image/jpeg',

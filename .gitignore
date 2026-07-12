@@ -22,3 +22,5 @@ apps/api/src/generated/
 # local test artifacts + runtime payslip storage
 apps/api/payslip.pdf
 apps/api/storage/
+
+apps/api/logo-check.png
