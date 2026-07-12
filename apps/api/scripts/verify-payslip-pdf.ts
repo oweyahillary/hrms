@@ -39,6 +39,18 @@ async function main(): Promise<void> {
   const auth = { Authorization: `Bearer ${token}` };
   const authJson = { ...auth, 'Content-Type': 'application/json' };
 
+  // Upload an org logo so the generated payslip exercises the logo-embedding
+  // path (the renderer is fail-soft, so this proves the wiring doesn't break
+  // generation; visual correctness is covered by the renderer's own tests).
+  const LOGO_PNG_B64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGYktHRAD/AP8A/6C9p5MAAAAVSURBVAjXY2RgaGDABpgYcIDBKQEAaYgAkOL3BpgAAAAASUVORK5CYII=';
+  const logoBytes = Buffer.from(LOGO_PNG_B64, 'base64');
+  const form = new FormData();
+  form.append('file', new Blob([logoBytes], { type: 'image/png' }), 'logo.png');
+  const logoRes = await fetch(`${BASE}/organization/logo`, { method: 'POST', headers: auth, body: form });
+  const logoOk = ((await logoRes.json()) as { hasLogo?: boolean }).hasLogo === true;
+  check('org logo upload succeeded (payslip PDF will embed it)', logoOk);
+
   // 2. Create an employee + salary structure for an unused period.
   const stamp = Date.now();
   const nid = String(stamp).slice(-8);
