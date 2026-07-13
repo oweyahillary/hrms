@@ -77,4 +77,23 @@ export class TokensService {
     const days = this.config.get<number>('JWT_REFRESH_TTL_DAYS') ?? 7;
     return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   }
+
+  /**
+   * Signed, short-lived `state` for the OIDC redirect. Proves on callback that
+   * this instance initiated the flow (CSRF). Signed with the REFRESH secret +
+   * a purpose claim so it can't be replayed as any other token.
+   */
+  async signSsoState(): Promise<string> {
+    return this.jwt.signAsync(
+      { purpose: 'sso-state', nonce: randomBytes(16).toString('base64url') },
+      { secret: this.config.get<string>('JWT_REFRESH_SECRET'), expiresIn: '10m' },
+    );
+  }
+
+  async verifySsoState(token: string): Promise<void> {
+    const payload = await this.jwt.verifyAsync<{ purpose?: string }>(token, {
+      secret: this.config.get<string>('JWT_REFRESH_SECRET'),
+    });
+    if (payload.purpose !== 'sso-state') throw new Error('Not an SSO state token');
+  }
 }

@@ -36,6 +36,22 @@ export class AuthService {
     };
   }
 
+  /**
+   * Log in a user matched from a verified SSO identity. The OIDC service has
+   * already verified the id_token signature, issuer, audience and email; here
+   * we map that email to a local account and issue our own session. Users must
+   * be provisioned locally first (no auto-create) — SSO authenticates, it
+   * doesn't grant access on its own.
+   */
+  async ssoLogin(email: string, meta: SessionMeta) {
+    const user = await this.prisma.user.findFirst({
+      where: { email: email.toLowerCase(), isActive: true },
+      include: { role: true },
+    });
+    if (!user) throw new UnauthorizedException('No active account for this identity');
+    return this.issueSession(user, meta);
+  }
+
   async login(email: string, password: string, meta: SessionMeta) {
     const user = await this.prisma.user.findFirst({
       where: { email: email.toLowerCase(), isActive: true },
