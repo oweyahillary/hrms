@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "description": "Kenyan HRMS — modular monolith (NestJS + Prisma + PostgreSQL)",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "api:dev": "npm run start:dev -w @hrms/api",
     "api:build": "npm run build -w @hrms/api",
@@ -12,5 +15,6 @@
     "bundle:cpanel": "bash apps/api/scripts/build-cpanel-bundle.sh",
     "db:up": "docker compose up -d db",
     "up": "docker compose up --build"
-  }
+  },
+  "dependencies": {}
 }

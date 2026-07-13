@@ -37,6 +37,29 @@ export class TokensService {
   }
 
   /**
+   * Short-lived token issued after a correct password when MFA is enabled; the
+   * client returns it with a TOTP/backup code to finish login. Signed with the
+   * REFRESH secret + a purpose claim so it can never be accepted as an access
+   * token by the JWT strategy (different secret AND rejected on purpose).
+   */
+  async signMfaChallenge(userId: string): Promise<string> {
+    return this.jwt.signAsync(
+      { sub: userId, purpose: 'mfa' },
+      { secret: this.config.get<string>('JWT_REFRESH_SECRET'), expiresIn: '5m' },
+    );
+  }
+
+  async verifyMfaChallenge(token: string): Promise<string> {
+    const payload = await this.jwt.verifyAsync<{ sub: string; purpose?: string }>(token, {
+      secret: this.config.get<string>('JWT_REFRESH_SECRET'),
+    });
+    if (payload.purpose !== 'mfa' || !payload.sub) {
+      throw new Error('Not an MFA challenge token');
+    }
+    return payload.sub;
+  }
+
+  /**
    * Refresh tokens are opaque random strings (NOT JWTs) so they can be revoked.
    * Only the SHA-256 hash is stored in the sessions table — a DB leak can't
    * replay them. Returns the raw token (given to the client once) + its hash.
