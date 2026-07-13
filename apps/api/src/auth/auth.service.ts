@@ -1,7 +1,9 @@
-import { Inject, Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { Inject, Injectable, BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
 import { PRISMA, type ExtendedPrismaClient } from '../prisma/prisma.service';
+import { CryptoService } from '../crypto/crypto.service';
 import { PasswordService } from './password.service';
 import { TokensService } from './tokens.service';
+import { newTotpSecret, totpUri, totpValid, newBackupCodes, hashBackupCode } from './totp.util';
 
 interface SessionMeta {
   ipAddress?: string;
@@ -12,6 +14,7 @@ interface SessionMeta {
 export class AuthService {
   constructor(
     @Inject(PRISMA) private readonly prisma: ExtendedPrismaClient,
+    private readonly crypto: CryptoService,
     private readonly passwords: PasswordService,
     private readonly tokens: TokensService,
   ) {}
@@ -30,7 +33,101 @@ export class AuthService {
     if (!(await this.passwords.verify(password, user.passwordHash))) {
       throw new UnauthorizedException('Invalid credentials');
     }
+    // MFA gate: a correct password alone is not a session when MFA is on.
+    if (user.mfaEnabled) {
+      return { mfaRequired: true, mfaToken: await this.tokens.signMfaChallenge(user.id) };
+    }
     return this.issueSession(user, meta);
+  }
+
+  /** Finish an MFA-gated login with a TOTP code or a one-time backup code. */
+  async completeMfaLogin(mfaToken: string, code: string, meta: SessionMeta) {
+    let userId: string;
+    try {
+      userId = await this.tokens.verifyMfaChallenge(mfaToken);
+    } catch {
+      throw new UnauthorizedException('Invalid or expired MFA challenge');
+    }
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, isActive: true },
+      include: { role: true },
+    });
+    if (!user || !user.mfaEnabled || !user.mfaSecret) {
+      throw new UnauthorizedException('Invalid MFA state');
+    }
+
+    const secret = await this.crypto.decrypt(user.mfaSecret);
+    if (totpValid(secret, code)) {
+      return this.issueSession(user, meta);
+    }
+    if (await this.consumeBackupCode(user.id, user.mfaBackupCodes ?? [], code)) {
+      return this.issueSession(user, meta);
+    }
+    throw new UnauthorizedException('Invalid authentication code');
+  }
+
+  /** If the code matches an unused backup hash, remove it (one-time) and return true. */
+  private async consumeBackupCode(userId: string, storedHashes: string[], code: string): Promise<boolean> {
+    const hash = hashBackupCode(code);
+    if (!storedHashes.includes(hash)) return false;
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { mfaBackupCodes: storedHashes.filter((h) => h !== hash) },
+    });
+    return true;
+  }
+
+  /** Begin MFA enrollment: mint a secret, store it encrypted (not yet enabled). */
+  async setupMfa(userId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, isActive: true },
+      include: { organization: { select: { name: true } } },
+    });
+    if (!user) throw new UnauthorizedException('Invalid credentials');
+    if (user.mfaEnabled) throw new ConflictException('MFA is already enabled; disable it first to re-enroll');
+
+    const secret = newTotpSecret();
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { mfaSecret: await this.crypto.encrypt(secret) },
+    });
+    const issuer = (user as unknown as { organization?: { name?: string } }).organization?.name ?? 'HRMS';
+    return { secret, otpauthUri: totpUri(secret, user.email, issuer) };
+  }
+
+  /** Confirm enrollment with a TOTP code; enable MFA and issue backup codes (shown once). */
+  async enableMfa(userId: string, token: string) {
+    const user = await this.prisma.user.findFirst({ where: { id: userId, isActive: true } });
+    if (!user) throw new UnauthorizedException('Invalid credentials');
+    if (user.mfaEnabled) throw new ConflictException('MFA is already enabled');
+    if (!user.mfaSecret) throw new BadRequestException('Start enrollment with /auth/mfa/setup first');
+
+    const secret = await this.crypto.decrypt(user.mfaSecret);
+    if (!totpValid(secret, token)) throw new BadRequestException('Code did not verify; check your authenticator');
+
+    const { plain, hashes } = newBackupCodes();
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { mfaEnabled: true, mfaBackupCodes: hashes },
+    });
+    return { enabled: true, backupCodes: plain };
+  }
+
+  /** Turn MFA off; requires a current TOTP or backup code. */
+  async disableMfa(userId: string, code: string) {
+    const user = await this.prisma.user.findFirst({ where: { id: userId, isActive: true } });
+    if (!user || !user.mfaEnabled || !user.mfaSecret) throw new BadRequestException('MFA is not enabled');
+
+    const secret = await this.crypto.decrypt(user.mfaSecret);
+    const ok = totpValid(secret, code)
+      || (await this.consumeBackupCode(user.id, user.mfaBackupCodes ?? [], code));
+    if (!ok) throw new UnauthorizedException('Invalid authentication code');
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { mfaEnabled: false, mfaSecret: null, mfaBackupCodes: [] },
+    });
+    return { enabled: false };
   }
 
   async refresh(refreshToken: string, meta: SessionMeta) {

@@ -120,6 +120,10 @@ jobs:
           npx ts-node scripts/verify-password-change.ts
           echo "::endgroup::"
 
+          echo "::group::verify mfa"
+          npx ts-node scripts/verify-mfa.ts
+          echo "::endgroup::"
+
       - name: API logs on failure
         if: failure()
         run: cat /tmp/api.log || true
