@@ -17,6 +17,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   /** Return value becomes request.user. */
   validate(payload: AccessTokenPayload): AuthUser {
-    return { userId: payload.sub, organizationId: payload.org, role: payload.role };
+    return {
+      userId: payload.sub,
+      organizationId: payload.org,
+      role: payload.role,
+      mustChangePassword: payload.mcp === true,
+    };
   }
 }

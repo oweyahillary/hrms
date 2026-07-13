@@ -222,6 +222,7 @@ model User {
   organizationId String
   email          String
   passwordHash   String
+  mustChangePassword Boolean @default(false) // force rotation on next login (seeded admin / admin-forced reset)
   roleId         String
   employeeId     String?   @unique
   mfaEnabled     Boolean   @default(false)
