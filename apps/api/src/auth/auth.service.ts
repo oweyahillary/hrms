@@ -19,6 +19,23 @@ export class AuthService {
     private readonly tokens: TokensService,
   ) {}
 
+  /** The caller's identity for the SPA — same shape as the login `user` object. */
+  async currentUser(userId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, isActive: true },
+      include: { role: true, organization: { select: { name: true } } },
+    });
+    if (!user) throw new UnauthorizedException();
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role.name,
+      organizationId: user.organizationId,
+      organizationName: user.organization?.name ?? '',
+      mustChangePassword: user.mustChangePassword === true,
+    };
+  }
+
   async login(email: string, password: string, meta: SessionMeta) {
     const user = await this.prisma.user.findFirst({
       where: { email: email.toLowerCase(), isActive: true },
