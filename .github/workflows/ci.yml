@@ -112,6 +112,10 @@ jobs:
           npx ts-node scripts/verify-p9.ts
           echo "::endgroup::"
 
+          echo "::group::verify p10"
+          npx ts-node scripts/verify-p10.ts
+          echo "::endgroup::"
+
           echo "::group::verify reports"
           npx ts-node scripts/verify-reports.ts
           echo "::endgroup::"
