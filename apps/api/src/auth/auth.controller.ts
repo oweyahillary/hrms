@@ -67,7 +67,7 @@ export class AuthController {
   @Get('me')
   @BypassPasswordChange()
   me(@CurrentUser() user: AuthUser) {
-    return user;
+    return this.auth.currentUser(user.userId);
   }
 
   // ---- MFA (TOTP) ----
