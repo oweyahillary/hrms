@@ -86,6 +86,39 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   STORAGE_DIR: string = './storage';
+
+  // ---- SSO (OIDC) — optional; the OIDC_* vars are required only when SSO_ENABLED=true ----
+  @IsOptional()
+  @IsString()
+  SSO_ENABLED?: string;
+
+  @ValidateIf((o: EnvironmentVariables) => o.SSO_ENABLED === 'true')
+  @IsString()
+  @MinLength(1)
+  OIDC_ISSUER?: string;
+
+  @ValidateIf((o: EnvironmentVariables) => o.SSO_ENABLED === 'true')
+  @IsString()
+  @MinLength(1)
+  OIDC_CLIENT_ID?: string;
+
+  @ValidateIf((o: EnvironmentVariables) => o.SSO_ENABLED === 'true')
+  @IsString()
+  @MinLength(1)
+  OIDC_CLIENT_SECRET?: string;
+
+  @ValidateIf((o: EnvironmentVariables) => o.SSO_ENABLED === 'true')
+  @IsString()
+  @MinLength(1)
+  OIDC_REDIRECT_URI?: string;
+
+  @IsOptional()
+  @IsString()
+  OIDC_SCOPES?: string;
+
+  @IsOptional()
+  @IsString()
+  OIDC_POST_LOGIN_REDIRECT?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>): EnvironmentVariables {

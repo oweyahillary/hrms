@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  Box, Button, Center, Group, Paper, PasswordInput, PinInput, Stack, Text, TextInput, Title,
+  Box, Button, Center, Divider, Group, Paper, PasswordInput, PinInput, Stack, Text, TextInput, Title,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { login, verifyMfa, isMfaChallenge, me } from '../api/auth';
+import { IconLock } from '@tabler/icons-react';
+import { login, verifyMfa, isMfaChallenge, me, ssoConfig } from '../api/auth';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { BrandMark } from '../layout/BrandMark';
@@ -19,6 +20,9 @@ export function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [code, setCode] = useState('');
+  const [ssoEnabled, setSsoEnabled] = useState(false);
+
+  useEffect(() => { void ssoConfig().then((c) => setSsoEnabled(c.enabled)); }, []);
 
   const form = useForm({
     initialValues: { email: '', password: '' },
@@ -89,6 +93,18 @@ export function LoginPage() {
                 />
                 {error && <Text c="red.7" size="sm">{error}</Text>}
                 <Button type="submit" loading={busy} fullWidth size="md" mt="xs">Sign in</Button>
+                {ssoEnabled && (
+                  <>
+                    <Divider label="or" labelPosition="center" my={4} />
+                    <Button
+                      component="a" href="/api/auth/sso/login"
+                      variant="default" fullWidth size="md"
+                      leftSection={<IconLock size={16} />}
+                    >
+                      Sign in with SSO
+                    </Button>
+                  </>
+                )}
               </Stack>
             </form>
           ) : (

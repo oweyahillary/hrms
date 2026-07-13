@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { RequireAuth } from './auth/RequireAuth';
 import { AppShellLayout } from './layout/AppShellLayout';
 import { LoginPage } from './pages/LoginPage';
+import { SsoCallbackPage } from './pages/SsoCallbackPage';
 import { ChangePasswordPage } from './pages/ChangePasswordPage';
 import { DashboardPage } from './pages/DashboardPage';
 
@@ -13,6 +14,7 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/sso/callback" element={<SsoCallbackPage />} />
       <Route path="/change-password" element={<RequireAuth><ChangePasswordPage /></RequireAuth>} />
       <Route
         path="/*"

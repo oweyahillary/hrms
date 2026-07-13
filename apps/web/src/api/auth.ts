@@ -60,3 +60,8 @@ export async function logout(): Promise<void> {
     setRefreshToken(null);
   }
 }
+
+export async function ssoConfig(): Promise<{ enabled: boolean }> {
+  try { return await api<{ enabled: boolean }>('/auth/sso/config', { method: 'GET' }); }
+  catch { return { enabled: false }; }
+}
