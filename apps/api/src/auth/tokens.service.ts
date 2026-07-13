@@ -8,6 +8,7 @@ export interface AccessTokenPayload {
   sub: string;   // userId
   org: string;   // organizationId
   role: string;  // role name
+  mcp?: boolean; // must-change-password: true blocks all routes except the change-password flow
 }
 
 @Injectable()

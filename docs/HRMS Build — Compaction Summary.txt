@@ -1,0 +1,44 @@
+HRMS Build — Compaction Summary (through v0.3.0)
+Handoff document created this session: /mnt/user-data/outputs/HRMS-HANDOFF.md (comprehensive — reference it).
+GOAL & WORKING STYLE
+Kenyan HRMS for SMEs, single-tenant-per-client, hosting-agnostic. Repo github.com/oweyahillary/hrms. User is solo dev on Windows/MINGW at ~/Downloads/Software Dev/HRMS/hrms-app.
+Style that works: Claude acts as decisive lead engineer (owns direction when user says "pick and lets build"); concise/direct, minimal back-and-forth; verify before shipping; incremental (pure builder→DB wiring→CI gate); ONE zip/turn (only files edited that turn) to /mnt/user-data/outputs/; live-proof curl commands each increment; honesty over guessing (never ship guessed tax-return formats); reconcile/research before building compliance features; ask_user_input only for genuine forks.
+STACK & ARCHITECTURE
+NestJS 11 + Prisma 7 + PostgreSQL 17 + Docker, modular monolith, npm workspaces (apps/api=@hrms/api). Schema ground-truth at apps/api/prisma/schema.prisma.
+
+Prisma 7 (Rust-free/ESM): client via PRISMA token as ExtendedPrismaClient; typed data/where use as never, results as unknown as T.
+CryptoService @Global: encrypt/decrypt async, blindIndex/isEncrypted sync. Encrypted employee PII: nationalId/kraPin/bankAccountNumber. Org's own kraPin/bankAccountNumber PLAINTEXT.
+Auth: JWT {sub,org,role} 15min + opaque refresh; scrypt. HR_MANAGEMENT_ROLES=['Admin','HR Manager','HR Officer']; AuthUser={userId,organizationId,role}.
+Tenant scoping (src/prisma/tenant-scope.ts, TENANT_SCOPED_MODELS): Payslip/BankExportBatch scoped VIA PayrollRun (extension does NOT inject org into nested relation filters — to bound a Payslip aggregate, resolve org-scoped PayrollRun IDs first, then query payslips by IDs).
+Immutability triggers on payroll_runs/payslips/audit_logs.
+
+CURRENT STATE — v0.3.0 RELEASED
+main=develop=v0.3.0 tagged. Three features shipped this session, all CI-green: bank export, KRA P9, reporting. develop is now the GitHub default branch. Phase 1+hardening complete before this session.
+⚠️ Release process: two releases became merge-conflict/divergence cleanups from mixing CLI merges + GitHub PR merges on main. NEXT: switch to PR-only path (feature→PR into develop→confirm CI green→merge UI; release = one PR develop→main→tag), optionally add main branch ruleset requiring CI green.
+CI (.github/workflows/ci.yml)
+Single e2e job on PG17. Gates in order: smoke→finalize fixture→verify immutability→verify tenant→verify payslip-pdf→verify bank-export→verify p9→verify reports. Each verify-*.ts self-contained, asserts RELATIONAL identities (rate-independent).
+FEATURES BUILT THIS SESSION (active files)
+Bank export: bank-export-file.ts (pure buildSalaryCsv/Xlsx generic + buildEftCsv/Xlsx EFT 11-col matching real bank template; RTGS if ≥1M else ACH; codes/accounts as TEXT in xlsx), bank-export.service.ts, bank-export.controller.ts. Schema: Employee +bankCode/bankBranchCode; Organization +bankAccountNumber/bankPurposeCode; BankExportBatch +format/template/rowCount; enums BankExportFormat{CSV XLSX}, BankExportTemplate{GENERIC EFT}. Endpoints POST /payroll/runs/:id/bank-export?template=generic|eft&format=csv|xlsx|both, GET :id/bank-exports, GET .../download. EFT 409 if no employer debit account. CI: verify-bank-export.ts. Dep: exceljs.
+KRA P9: p9-model.ts (pure buildP9Card, cols A–O + reconciliation flag), p9.service.ts (re-runs engine per month via pickEffectiveStructure→deriveStructureAmounts→computePayroll, reconciles to stored PAYE by construction), p9-document.ts (renderP9Pdf landscape KRA grid, pdfkit), p9.controller.ts (GET /employees/:id/p9?year=, GET :id/p9/pdf?year=). CI: verify-p9.ts.
+Reporting: reports.service.ts (payrollSummary, statutoryRemittance, yearTrend, headcount, +PDF methods), reports.controller.ts, reports.module.ts (in app.module), reports-document.ts (renderRemittancePdf, renderPayrollSummaryPdf portrait pdfkit). Endpoints GET /reports/payroll-summary|statutory-remittance|year-trend?year=|headcount + /statutory-remittance/pdf + /payroll-summary/pdf. CI: verify-reports.ts.
+STATUTORY RATES 2026 (seeded, golden)
+PAYE 10/25/30/32.5/35%, relief 2,400/mo. NSSF Phase 4 6%+6%, UEL 108000, max 6,480. SHIF 2.75% floor 300. AHL 1.5%+1.5%. Pension deductible cap 30,000/mo (P9 col E lower-of-three: 30% basic/actual/30k). GOLDEN: Jane gross 105,000→nssf 6,300, shif 2,887.50, ahl 1,575, paye 19,154.60, net 65,082.90.
+ENVIRONMENT QUIRKS & VERIFICATION
+Windows/MINGW, Node 20, PG port 5433. Dev server from ROOT npm run api:dev; build ROOT npm run api:build; Prisma from apps/api. source scripts/env.sh (from apps/api) sets TOKEN/TOKEN/
+TOKEN/EMP/$SCRATCH; refresh re-mints token. .scratch/ (repo root, git-ignored) for test downloads.
+Friction: token expiry→401 (run refresh); after schema change must db push+generate+RESTART or 500 "column does not exist"; MINGW mangles multi-line pastes (ONE line at a time); placeholders run literally (give real values/$VARs); be explicit about cd target.
+Sandbox can't run DB/Prisma: verify via nest build with temp stub at apps/api/src/generated/prisma/client.ts (delete after — full stub in HANDOFF §7). CRITICAL: typecheck verify-*.ts under REAL tsconfig (temp tsconfig.verify.json extending ./tsconfig.json) BEFORE shipping — strict/lib ES2023/no-DOM catches Buffer-generics + unknown-json bugs.
+KEY IDs / TEST DATA
+Admin admin@example.com/ChangeMe123! (MUST change before prod). Jane EMP-001=d14e23a6-4b96-4700-87a0-ed12a774193d ($EMP). Finalized runs: March 2026=59839187-cf37-4b40-a613-145623ba5d1a; August 2026=2825b2fd-aac7-40bf-b52b-8cb715065eb3. ~8 leftover test employees (BANK-/P9-/RPT-*) on local DB, ACTIVE/Unassigned — inflate headcount, harmless.
+FAILED ATTEMPTS / LESSONS
+Strict-tsconfig CI miss (compile verify scripts under real config; exceljs load needs Parameters<typeof wb.xlsx.load>[0] cast); stray test files committed (logo-check.png, salary.*)→fixed via .scratch/ + broad gitignore; branch divergence ×2 (mix CLI+PR merges)→go PR-only; env.sh SCRATCH off-by-one fixed (script 3 levels deep); false-alarm 500s usually = server not restarted after schema change.
+PARKED / SKIPPED
+P10 (KRA PAYE return): multi-sheet (A/B/M/N), CSV imported into P10_Return.xlsm. Column semantics known (KRA instruction PDF) but exact 25-col Sheet B ORDER unknowable from data-only sample — won't ship guessed tax format. Blocker: need real P10_Return.xlsm Sheet B header row; user has NO PAYE on their KRA PIN so can't download template. AHL M-sheet (PIN/name/gross only, iTax auto-1.5%) is a reconcilable alternative. Bank-specific adapters deferred until client's real bank known.
+NEXT STEPS (recommended order)
+
+Security hardening FIRST — force-change seeded admin password (live vuln), then MFA (local accounts survive even after SSO). 2. PR-only release flow + main ruleset. 3. OIDC SSO (roadmap) when pilot client's IdP known — replaces password check not session model; per-instance one-org config; validate id_token via JWKS, map email→Employee, still mint own JWT; libs openid-client + @nestjs/passport; keep local auth break-glass. (OAuth=authz not authn; OIDC=modern JWT-native default→use this; SAML only if enterprise IT mandates.) 4. Leave auto-accrual. 5. P10 when iTax access. 6. Frontend/dashboard (reporting JSON endpoints feed it; no UI yet).
+
+UPLOADED REFERENCE FILES (in /mnt/user-data/uploads, may not persist)
+BULK_EFT_RTGS_FILE...xlsx (real bank EFT/RTGS 11-col template — basis for EFT adapter); Sample-CSV-Sheet-B_Employees_Dtls.xlsx (KRA P10 Sheet B, data-only, for future P10); P9-FORM-Template-2025.xlsx (KRA P9A card — basis for P9).
+
+Session ended at a clean release boundary (v0.3.0). Handoff document delivered. Ready to resume with security hardening next session.

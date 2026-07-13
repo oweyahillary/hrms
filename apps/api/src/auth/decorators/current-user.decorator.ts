@@ -4,6 +4,7 @@ export interface AuthUser {
   userId: string;
   organizationId: string;
   role: string;
+  mustChangePassword: boolean;
 }
 
 /** Injects the authenticated user (from the validated JWT) into a handler param. */
