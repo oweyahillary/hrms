@@ -65,7 +65,7 @@ jobs:
       - name: Seed base data + statutory rates
         working-directory: apps/api
         run: |
-          npm run seed
+          SEED_FORCE_PASSWORD_CHANGE=false npm run seed
           npm run seed:rates
 
       - name: Apply immutability triggers
@@ -112,8 +112,20 @@ jobs:
           npx ts-node scripts/verify-p9.ts
           echo "::endgroup::"
 
+          echo "::group::verify p10"
+          npx ts-node scripts/verify-p10.ts
+          echo "::endgroup::"
+
           echo "::group::verify reports"
           npx ts-node scripts/verify-reports.ts
+          echo "::endgroup::"
+
+          echo "::group::verify password-change"
+          npx ts-node scripts/verify-password-change.ts
+          echo "::endgroup::"
+
+          echo "::group::verify mfa"
+          npx ts-node scripts/verify-mfa.ts
           echo "::endgroup::"
 
       - name: API logs on failure

@@ -19,6 +19,9 @@ async function main() {
   const orgName = process.env.SEED_ORG_NAME ?? 'Demo Organization';
   const email = (process.env.SEED_ADMIN_EMAIL ?? 'admin@example.com').toLowerCase();
   const password = process.env.SEED_ADMIN_PASSWORD ?? 'ChangeMe123!';
+  // Force rotation of the default on first login. Disable only for automated
+  // tests/CI (SEED_FORCE_PASSWORD_CHANGE=false) so gates can log in unblocked.
+  const forceChange = (process.env.SEED_FORCE_PASSWORD_CHANGE ?? 'true') !== 'false';
 
   // No request context here => runs unscoped (bootstrapping the first tenant),
   // so organizationId is passed explicitly rather than injected.
@@ -37,6 +40,7 @@ async function main() {
         organizationId: org.id,
         email,
         passwordHash: await passwords.hash(password),
+        mustChangePassword: forceChange, // force rotation of the seeded default on first login
         roleId: role.id,
       },
     });

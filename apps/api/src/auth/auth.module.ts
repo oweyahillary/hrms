@@ -8,6 +8,7 @@ import { PasswordService } from './password.service';
 import { TokensService } from './tokens.service';
 import { JwtStrategy } from './jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { PasswordChangeGuard } from './guards/password-change.guard';
 import { RolesGuard } from './guards/roles.guard';
 
 @Module({
@@ -22,8 +23,10 @@ import { RolesGuard } from './guards/roles.guard';
     PasswordService,
     TokensService,
     JwtStrategy,
-    // Order matters: authenticate first, then authorize.
+    // Order matters: authenticate first, then block if a password change is
+    // owed, then authorize by role.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: PasswordChangeGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
   exports: [PasswordService, TokensService],
