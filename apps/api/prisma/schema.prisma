@@ -479,6 +479,13 @@ model AttendanceRecord {
   @@map("attendance_records")
 }
 
+enum LeaveAccrualMethod {
+  NONE
+  UPFRONT
+  MONTHLY
+  DAILY
+}
+
 model LeaveType {
   id               String   @id @default(uuid())
   organizationId   String
@@ -486,6 +493,14 @@ model LeaveType {
   isPaid           Boolean  @default(true)
   requiresApproval Boolean  @default(true)
   maxDaysPerYear   Int?
+
+  // Auto-accrual + carry-over policy (carry-over fields are consumed by the
+  // year-rollover feature; accrual uses accrualMethod + annualDays).
+  accrualMethod         LeaveAccrualMethod @default(NONE)
+  annualDays            Int? // annual entitlement the type accrues toward (the per-year cap)
+  carryOverMax          Int? // max days carried into next year (0 = none, null = unlimited)
+  carryOverExpiryMonths Int? // carried days lapse this many months into the new year (null = never)
+
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt // [T2]
 

@@ -120,6 +120,10 @@ jobs:
           npx ts-node scripts/verify-reports.ts
           echo "::endgroup::"
 
+          echo "::group::verify leave-accrual"
+          npx ts-node scripts/verify-leave-accrual.ts
+          echo "::endgroup::"
+
           echo "::group::verify password-change"
           npx ts-node scripts/verify-password-change.ts
           echo "::endgroup::"

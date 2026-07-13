@@ -5,7 +5,8 @@ import type { UpdateLeaveTypeDto } from './dto/update-leave-type.dto';
 
 export interface LeaveTypeRow {
   id: string; name: string; isPaid: boolean; requiresApproval: boolean;
-  maxDaysPerYear: number | null; createdAt: Date; updatedAt: Date;
+  maxDaysPerYear: number | null; accrualMethod: string; annualDays: number | null;
+  carryOverMax: number | null; carryOverExpiryMonths: number | null; createdAt: Date; updatedAt: Date;
 }
 
 @Injectable()
@@ -20,6 +21,10 @@ export class LeaveTypesService {
           isPaid: dto.isPaid ?? true,
           requiresApproval: dto.requiresApproval ?? true,
           maxDaysPerYear: dto.maxDaysPerYear ?? null,
+          accrualMethod: dto.accrualMethod ?? 'NONE',
+          annualDays: dto.annualDays ?? null,
+          carryOverMax: dto.carryOverMax ?? null,
+          carryOverExpiryMonths: dto.carryOverExpiryMonths ?? null,
         } as never,
       })) as unknown as LeaveTypeRow;
     } catch (err) {
