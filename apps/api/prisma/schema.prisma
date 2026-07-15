@@ -184,6 +184,7 @@ model Organization {
   payslipNotice      String? // optional statutory/custom line shown on payslips
   logoPath           String? // stored relative path to the org logo (PNG/JPEG)
   logoAlignment      LogoAlignment @default(LEFT)
+  brandColor         String? // hex (e.g. "#0c6355") — drives the web app's accent theme
   // Employer payment config for bank EFT/RTGS bulk files (the debit account
   // salaries are paid from; purpose code is bank-assigned). Own-company data,
   // not employee PII, so stored plaintext like the employer's own KRA PIN.

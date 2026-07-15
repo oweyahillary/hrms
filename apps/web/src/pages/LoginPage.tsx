@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  Box, Button, Center, Divider, Group, Paper, PasswordInput, PinInput, Stack, Text, TextInput, Title,
+  Box, Button, Center, Divider, Paper, PasswordInput, PinInput, Stack, Text, TextInput, Title,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { IconLock } from '@tabler/icons-react';
@@ -71,18 +71,15 @@ export function LoginPage() {
   return (
     <Center mih="100vh" p="md" bg="sand.0">
       <Stack w={400} maw="100%" gap="lg">
-        <Group gap="sm" justify="center">
-          <BrandMark />
-        </Group>
-
         <Paper p="xl" radius="md">
+          <Center mb="lg">
+            <BrandMark size="lg" />
+          </Center>
+
           {!mfaToken ? (
             <form onSubmit={form.onSubmit(submitCredentials)}>
               <Stack gap="md">
-                <Box>
-                  <Title order={2}>Welcome back</Title>
-                  <Text c="sand.6" size="sm" mt={4}>Sign in to your workspace</Text>
-                </Box>
+                <Text c="sand.6" size="sm" ta="center">Sign in to your workspace</Text>
                 <TextInput
                   label="Email" placeholder="you@company.co.ke" autoComplete="username"
                   {...form.getInputProps('email')}
@@ -109,8 +106,8 @@ export function LoginPage() {
             </form>
           ) : (
             <Stack gap="md">
-              <Box>
-                <Title order={2}>Two-factor</Title>
+              <Box ta="center">
+                <Title order={3}>Two-factor</Title>
                 <Text c="sand.6" size="sm" mt={4}>Enter the 6-digit code from your authenticator</Text>
               </Box>
               <Center>

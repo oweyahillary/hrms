@@ -20,6 +20,7 @@ interface OrgRow {
   payslipNotice: string | null;
   logoPath: string | null;
   logoAlignment: string;
+  brandColor: string | null;
   bankAccountNumber: string | null;
   bankPurposeCode: string | null;
 }
@@ -39,7 +40,7 @@ export class OrganizationService {
       select: {
         id: true, name: true, kraPin: true, physicalAddress: true,
         registrationNumber: true, payslipNotice: true, logoPath: true, logoAlignment: true,
-        bankAccountNumber: true, bankPurposeCode: true,
+        brandColor: true, bankAccountNumber: true, bankPurposeCode: true,
       },
     } as never)) as unknown as OrgRow | null;
     if (!org) throw new NotFoundException('Organization not found');
@@ -55,6 +56,7 @@ export class OrganizationService {
       registrationNumber: org.registrationNumber,
       payslipNotice: org.payslipNotice,
       logoAlignment: org.logoAlignment,
+      brandColor: org.brandColor,
       bankAccountNumber: org.bankAccountNumber,
       bankPurposeCode: org.bankPurposeCode,
       hasLogo: org.logoPath != null,
@@ -68,7 +70,7 @@ export class OrganizationService {
   async updateBranding(orgId: string, dto: UpdateBrandingDto) {
     await this.load(orgId); // 404 if missing
     const data: Record<string, unknown> = {};
-    for (const k of ['name', 'kraPin', 'physicalAddress', 'registrationNumber', 'payslipNotice', 'logoAlignment', 'bankAccountNumber', 'bankPurposeCode'] as const) {
+    for (const k of ['name', 'kraPin', 'physicalAddress', 'registrationNumber', 'payslipNotice', 'logoAlignment', 'brandColor', 'bankAccountNumber', 'bankPurposeCode'] as const) {
       if (dto[k] !== undefined) data[k] = dto[k];
     }
     const updated = (await this.prisma.organization.update({
@@ -77,7 +79,7 @@ export class OrganizationService {
       select: {
         id: true, name: true, kraPin: true, physicalAddress: true,
         registrationNumber: true, payslipNotice: true, logoPath: true, logoAlignment: true,
-        bankAccountNumber: true, bankPurposeCode: true,
+        brandColor: true, bankAccountNumber: true, bankPurposeCode: true,
       },
     } as never)) as unknown as OrgRow;
     return this.present(updated);
@@ -116,6 +118,42 @@ export class OrganizationService {
       });
     }
     return { hasLogo: false };
+  }
+
+  /**
+   * Resolve "the" organization for unauthenticated branding. The deployment
+   * model is single-tenant per client (one DB + one API per client), so exactly
+   * one row is expected. If there are zero or several, we return nothing rather
+   * than guess which brand to show — callers fall back to neutral defaults.
+   */
+  private async soleOrg(): Promise<OrgRow | null> {
+    const rows = (await this.prisma.organization.findMany({
+      take: 2, // enough to detect "more than one" without loading the table
+      select: {
+        id: true, name: true, kraPin: true, physicalAddress: true,
+        registrationNumber: true, payslipNotice: true, logoPath: true, logoAlignment: true,
+        brandColor: true, bankAccountNumber: true, bankPurposeCode: true,
+      },
+    } as never)) as unknown as OrgRow[];
+    return rows.length === 1 ? rows[0] : null;
+  }
+
+  /**
+   * Branding for pre-login screens: name, accent colour and whether a logo
+   * exists — nothing sensitive, and deliberately readable without a session so
+   * the sign-in page can carry the client's identity.
+   */
+  async publicBranding(): Promise<{ name: string | null; brandColor: string | null; hasLogo: boolean }> {
+    const org = await this.soleOrg();
+    if (!org) return { name: null, brandColor: null, hasLogo: false };
+    return { name: org.name, brandColor: org.brandColor, hasLogo: org.logoPath != null };
+  }
+
+  /** The logo for pre-login screens (see publicBranding for the rationale). */
+  async publicLogo(): Promise<{ buffer: Buffer; contentType: string; filename: string }> {
+    const org = await this.soleOrg();
+    if (!org?.logoPath) throw new NotFoundException('No logo available');
+    return this.getLogo(org.id);
   }
 
   /** Read the stored logo for preview/download. */

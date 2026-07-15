@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
 /** All fields optional — a PATCH updates only what is provided. */
 export class UpdateBrandingDto {
@@ -19,6 +19,10 @@ export class UpdateBrandingDto {
 
   @IsOptional() @IsIn(['LEFT', 'CENTER', 'RIGHT'])
   logoAlignment?: 'LEFT' | 'CENTER' | 'RIGHT';
+
+  @IsOptional()
+  @Matches(/^#[0-9a-fA-F]{6}$/, { message: 'brandColor must be a 6-digit hex colour, e.g. #0c6355' })
+  brandColor?: string;
 
   @IsOptional() @IsString() @MaxLength(40)
   bankAccountNumber?: string;
