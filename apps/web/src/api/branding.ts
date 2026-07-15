@@ -15,5 +15,10 @@ export async function getPublicBranding(): Promise<PublicBranding> {
   }
 }
 
-/** URL of the client logo (served publicly so the sign-in page can show it). */
-export const LOGO_URL = '/api/organization/public-logo';
+/**
+ * URL of the client logo (public so the sign-in page can show it). `version`
+ * busts the browser/CDN cache after an upload or removal — the endpoint sets a
+ * 5-minute cache, so a fresh logo would otherwise not appear straight away.
+ */
+export const logoUrl = (version = 0): string =>
+  version > 0 ? `/api/organization/public-logo?v=${version}` : '/api/organization/public-logo';

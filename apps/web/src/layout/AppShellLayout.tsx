@@ -5,8 +5,10 @@ import {
 } from '@mantine/core';
 import {
   IconLayoutDashboard, IconUsers, IconCalendarStats, IconReportMoney, IconChevronDown, IconLogout,
+  IconSettings,
 } from '@tabler/icons-react';
 import { useAuth } from '../auth/AuthContext';
+import { canManageOrg } from '../auth/roles';
 import { BrandMark } from './BrandMark';
 
 const NAV = [
@@ -15,6 +17,9 @@ const NAV = [
   { to: '/leave', label: 'Leave', icon: IconCalendarStats },
   { to: '/payroll', label: 'Payroll', icon: IconReportMoney },
 ];
+
+/** Settings is organisation administration — only for roles that can manage it. */
+const ADMIN_NAV = [{ to: '/settings', label: 'Settings', icon: IconSettings }];
 
 export function AppShellLayout({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth();
@@ -36,7 +41,7 @@ export function AppShellLayout({ children }: { children: ReactNode }) {
       <AppShell.Navbar p="md">
         <Box mb="lg" px="xs"><BrandMark name={user?.organizationName} /></Box>
         <ScrollArea>
-          {NAV.map((item) => {
+          {[...NAV, ...(canManageOrg(user?.role) ? ADMIN_NAV : [])].map((item) => {
             const active = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to);
             return (
               <NavLink

@@ -1,5 +1,5 @@
 import { Box, Group, Image, Text } from '@mantine/core';
-import { LOGO_URL } from '../api/branding';
+import { logoUrl } from '../api/branding';
 import { useBranding } from '../branding/BrandingContext';
 
 type Size = 'md' | 'lg';
@@ -17,7 +17,7 @@ const LOGO_DIMS: Record<Size, { h: number; maxWidth: number }> = {
 export function BrandMark({
   name, compact = false, size = 'md',
 }: { name?: string; compact?: boolean; size?: Size }) {
-  const { branding } = useBranding();
+  const { branding, version } = useBranding();
   const label = (name ?? branding.name ?? '').trim();
   const monogram = (label ? label[0] : 'H').toUpperCase();
 
@@ -28,7 +28,7 @@ export function BrandMark({
     const dims = LOGO_DIMS[size];
     return (
       <Image
-        src={LOGO_URL}
+        src={logoUrl(version)}
         alt={label || 'Logo'}
         h={compact ? 28 : dims.h}
         w="auto"

@@ -5,6 +5,7 @@ import { LoginPage } from './pages/LoginPage';
 import { SsoCallbackPage } from './pages/SsoCallbackPage';
 import { ChangePasswordPage } from './pages/ChangePasswordPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { SettingsPage } from './pages/SettingsPage';
 
 function Placeholder({ name }: { name: string }) {
   return <div style={{ color: 'var(--mantine-color-sand-6)' }}>{name} — coming soon</div>;
@@ -26,6 +27,7 @@ export function App() {
                 <Route path="/employees" element={<Placeholder name="Employees" />} />
                 <Route path="/leave" element={<Placeholder name="Leave" />} />
                 <Route path="/payroll" element={<Placeholder name="Payroll" />} />
+                <Route path="/settings" element={<SettingsPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </AppShellLayout>

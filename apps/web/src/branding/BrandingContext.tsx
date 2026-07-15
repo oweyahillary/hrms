@@ -1,15 +1,32 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { getPublicBranding, type PublicBranding } from '../api/branding';
 
 const EMPTY: PublicBranding = { name: null, brandColor: null, hasLogo: false };
 
-const BrandingContext = createContext<{ branding: PublicBranding; loaded: boolean }>({
-  branding: EMPTY, loaded: false,
+interface BrandingState {
+  branding: PublicBranding;
+  loaded: boolean;
+  /** Bumped on every refresh — used to bust the cached logo image. */
+  version: number;
+  /** Re-read branding (after a settings save) so the theme/logo update live. */
+  refresh: () => Promise<void>;
+}
+
+const BrandingContext = createContext<BrandingState>({
+  branding: EMPTY, loaded: false, version: 0, refresh: async () => {},
 });
 
 export function BrandingProvider({ children }: { children: ReactNode }) {
   const [branding, setBranding] = useState<PublicBranding>(EMPTY);
   const [loaded, setLoaded] = useState(false);
+  const [version, setVersion] = useState(0);
+
+  const refresh = useCallback(async () => {
+    const b = await getPublicBranding();
+    setBranding(b);
+    setVersion((v) => v + 1);
+    setLoaded(true);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -21,11 +38,13 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, []);
 
-  return (
-    <BrandingContext.Provider value={{ branding, loaded }}>{children}</BrandingContext.Provider>
+  const value = useMemo<BrandingState>(
+    () => ({ branding, loaded, version, refresh }),
+    [branding, loaded, version, refresh],
   );
+  return <BrandingContext.Provider value={value}>{children}</BrandingContext.Provider>;
 }
 
-export function useBranding() {
+export function useBranding(): BrandingState {
   return useContext(BrandingContext);
 }
