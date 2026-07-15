@@ -10,6 +10,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  web:
+    name: Web build + typecheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `build` runs `tsc --noEmit && vite build`, so this gates both type errors
+      # and anything that breaks the bundle.
+      - name: Typecheck + build the SPA
+        run: npm run build -w @hrms/web
+
   e2e:
     name: Build + end-to-end verification
     runs-on: ubuntu-latest
