@@ -7,6 +7,8 @@ import { AuthService } from './auth.service';
 import { PasswordService } from './password.service';
 import { TokensService } from './tokens.service';
 import { JwtStrategy } from './jwt.strategy';
+import { OidcController } from './oidc.controller';
+import { OidcService } from './oidc.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { PasswordChangeGuard } from './guards/password-change.guard';
 import { RolesGuard } from './guards/roles.guard';
@@ -17,12 +19,13 @@ import { RolesGuard } from './guards/roles.guard';
     // Secrets are passed per-operation in TokensService, so no global secret here.
     JwtModule.register({}),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, OidcController],
   providers: [
     AuthService,
     PasswordService,
     TokensService,
     JwtStrategy,
+    OidcService,
     // Order matters: authenticate first, then block if a password change is
     // owed, then authorize by role.
     { provide: APP_GUARD, useClass: JwtAuthGuard },

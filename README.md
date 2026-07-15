@@ -13,24 +13,38 @@ hrms-app/
 │     ├─ prisma/schema.prisma    # data model (ground truth)
 │     ├─ prisma.config.ts        # Prisma 7 datasource/migrations config
 │     ├─ passenger.js            # cPanel/Passenger startup shim
-│     ├─ scripts/                # build-cpanel-bundle.sh, verify-spine.ts
+│     ├─ scripts/                # bundle build, seed, verify-*.ts (live proofs)
 │     ├─ src/
 │     │  ├─ common/context/      # AsyncLocalStorage request context + middleware
 │     │  ├─ config/              # env validation (fail-closed) + typed config
 │     │  ├─ crypto/              # app-layer field encryption + blind index
 │     │  ├─ prisma/              # extended client (tenant scoping + audit)
+│     │  ├─ auth/                # login, JWT + refresh + sessions, RBAC, MFA
+│     │  ├─ organization/        # tenant/org
+│     │  ├─ employees/           # employee records (encrypted identifiers)
+│     │  ├─ departments/ job-titles/ public-holidays/
+│     │  ├─ salary/              # salary structures + component math
+│     │  ├─ payroll/             # engine (PAYE/NSSF/SHIF/AHL), runs, payslips,
+│     │  │                       #   bank export, P9 card, P10 return
+│     │  ├─ attendance/ leave/   # time + leave
+│     │  ├─ reports/ compliance/ # statutory reporting
 │     │  ├─ health/              # liveness + readiness endpoints
 │     │  ├─ app.module.ts
 │     │  └─ main.ts              # bootstrap: helmet, validation, Swagger
 │     ├─ Dockerfile
 │     └─ .env.example
 │  # └─ web/                     # React frontend — added later
-├─ docs/
-│  ├─ spine.md                   # context, tenant scoping, audit conventions
-│  └─ deployment-cpanel.md       # shared-hosting deployment guide
+├─ docs/                         # spine, deployment, auth, payroll, p10, …
 ├─ docker-compose.yml            # db + api
 └─ package.json                  # npm workspaces root
 ```
+
+## Prerequisites
+
+- Node.js 20+ and npm 10+ (Node 20 is the tested runtime; some optional deps
+  prefer 22 and warn harmlessly on 20)
+- Docker + Docker Compose (for the containerised path)
+- PostgreSQL 17 (only if running the API outside Docker)
 
 ## First-time setup
 
@@ -69,9 +83,16 @@ API at <http://localhost:3000/api> (Swagger at `/api/docs`). Health:
   **[docs/spine.md](docs/spine.md)**. `organizationId` is injected/enforced
   automatically per request, and every write is recorded to an append-only audit
   trail — no per-module code required.
-- **App-layer field encryption** (national ID, KRA PIN, bank account) with an
-  HMAC blind index for search; key management switchable via `KEY_PROVIDER`
-  (`env` | `aws_kms`).
+- **App-layer field encryption.** Sensitive identifiers (national ID, KRA PIN,
+  bank account) are AES-256-GCM encrypted at the application layer, on top of
+  Postgres at-rest encryption — a database dump alone is useless without the key.
+  Searchable fields use an HMAC **blind index** (`*Hmac` columns) so lookup works
+  over ciphertext. Key management is switchable via `KEY_PROVIDER` (`env` |
+  `aws_kms`); every ciphertext is self-describing, so rotating keys or switching
+  providers never strands data.
+- **Auth.** Login with JWT (15-min access) + opaque refresh + sessions, RBAC
+  guard, **forced first-login password change**, and optional **MFA (TOTP)** with
+  one-time backup codes.
 - **Input validation** on every request, **helmet + CORS**, **env validated at
   boot** (fail-closed).
 
@@ -83,22 +104,33 @@ API at <http://localhost:3000/api> (Swagger at `/api/docs`). Health:
   is provided already-extended (tenant scoping + audit) via the `PRISMA` token —
   inject that, never `new PrismaClient()`.
 
-## Not yet built (next stages)
+## Built so far (through v0.4.0)
 
-**Auth** (login, JWT + refresh + sessions, RBAC guard) — which will populate the
-request context with the real authenticated org/user. Then feature modules,
-starting with **employees**, where `CryptoService` meets the encrypted identifier
-fields.
+- **Spine** — request context, tenant scoping, append-only audit.
+- **Crypto** — field encryption + blind-index search, switchable key provider.
+- **Auth** — login/JWT/refresh/sessions, RBAC, forced password change, MFA (TOTP).
+- **Core HR** — organization, employees (encrypted PII), departments, job titles,
+  public holidays, attendance, leave.
+- **Payroll** — statutory engine (PAYE bands, NSSF Phase 4, SHIF, AHL; SHIF/AHL
+  deductible before PAYE per the 2024 Tax Laws Amendment), payroll runs and
+  payslips with DB-level immutability triggers.
+- **Statutory outputs** — bank export (bulk EFT/RTGS CSV), **P9** tax-deduction
+  card (PDF), **P10** employer PAYE return Section B (iTax import CSV — see
+  **[docs/p10.md](docs/p10.md)**), and JSON reporting endpoints (payroll summary,
+  statutory remittance).
 
-## Verified so far
+## Verified (CI)
 
-- `nest build` clean.
-- Crypto core 10/10; crypto-through-DI 6/6.
-- Spine pure logic 22/22 (tenant-scope injection shapes, recursion guard,
-  snapshot serialisation); app DI-boots with the extended client + middleware.
-- Passenger shim boots even with a socket-path `PORT`.
-- **Run yourself against a live DB:** `npm run verify:spine` — proves org
-  injection, read isolation, cross-tenant blocking, and audit writes end-to-end.
-- Not verified in-sandbox: `prisma generate`, Docker image build, the AWS KMS
-  provider (live creds), and the extension's live DB behavior (that's what
-  `verify:spine` is for).
+A single end-to-end CI job runs on PostgreSQL 17 and gates every merge. Each
+`verify-*.ts` script asserts **relational** identities against a live API, so the
+gates are independent of the exact statutory rates. Current gates: smoke,
+immutability, tenant isolation, payslip PDF, bank export, P9, P10, reports,
+password change, MFA. Run any of them yourself against a live DB, e.g.
+`cd apps/api && npx ts-node scripts/verify-p10.ts`.
+
+## Roadmap (next)
+
+- **OIDC SSO** groundwork (IdP-specific wiring once a pilot client's provider is
+  known — Google Workspace / Entra / Okta; local break-glass login retained).
+- **Leave auto-accrual.**
+- **Frontend / dashboard** (the JSON reporting endpoints already feed it).
