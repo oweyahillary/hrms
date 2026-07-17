@@ -55,13 +55,13 @@ export class PayrollRunsService {
     if (!orig) throw new NotFoundException('Payroll run to correct not found');
     if (orig.status !== 'FINALIZED') throw new ConflictException('Only a finalized run can be corrected.');
     return this.buildRun({
-      periodMonth: orig.periodMonth, periodYear: orig.periodYear, runType: 'CORRECTION',
+      periodMonth: orig.periodMonth, periodYear: orig.periodYear, runType: 'ADJUSTMENT',
       correctsRunId, employeeWhere: { id: { in: dto.employeeIds } }, roundNet: dto.roundNetToShilling ?? false,
     });
   }
 
   private async buildRun(opts: {
-    periodMonth: number; periodYear: number; runType: 'REGULAR' | 'CORRECTION';
+    periodMonth: number; periodYear: number; runType: 'REGULAR' | 'ADJUSTMENT';
     correctsRunId: string | null; employeeWhere: Record<string, unknown>; roundNet: boolean;
     faultInject?: string;
   }) {
