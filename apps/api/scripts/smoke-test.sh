@@ -107,6 +107,11 @@ DSR_ID=$(first_id "$DSR")
 assert_contains "$DSR" '"daysUntilDue":30' "ERASURE request has 30-day SLA"
 BLOCKED=$(req PATCH "/data-subject-requests/$DSR_ID" '{"status":"COMPLETED"}')
 assert_contains "$BLOCKED" '"statusCode":409' "completing erasure blocked before anonymization"
+# Erasure is for leavers: an employee who hasn't exited can't be erased.
+TOO_SOON=$(req POST "/employees/$EMP_ID/anonymize")
+assert_contains "$TOO_SOON" '"statusCode":409' "erasing a non-exited employee is blocked"
+TERM=$(req POST "/employees/$EMP_ID/terminate" '{"exitDate":"2026-09-30"}')
+assert_contains "$TERM" '"employmentStatus":"EXITED"' "employee terminated before erasure"
 ANON=$(req POST "/employees/$EMP_ID/anonymize")
 assert_contains "$ANON" '"anonymized":true' "employee anonymized (Admin action)"
 DONE=$(req PATCH "/data-subject-requests/$DSR_ID" '{"status":"COMPLETED"}')

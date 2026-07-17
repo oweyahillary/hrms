@@ -16,7 +16,11 @@ export class CreateLeaveRequestDto {
   @IsOptional() @IsString() @MaxLength(500)
   reason?: string;
 
-  /** Ordered list of approver user IDs; each approves in turn. */
-  @IsArray() @ArrayMinSize(1) @IsUUID('all', { each: true })
-  approverUserIds!: string[];
+  /**
+   * IGNORED unless the organisation has allowEmployeeChosenApprovers switched on.
+   * Approvers are normally derived from the org's approval policy — an applicant
+   * choosing who signs off their own leave is a control weakness.
+   */
+  @IsOptional() @IsArray() @ArrayMinSize(1) @IsUUID('all', { each: true })
+  approverUserIds?: string[];
 }

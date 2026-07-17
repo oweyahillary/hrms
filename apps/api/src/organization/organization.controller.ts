@@ -7,6 +7,8 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { OrganizationService, type UploadedFileLike } from './organization.service';
 import { UpdateBrandingDto } from './dto/update-branding.dto';
+import { UpdateNumberingDto } from './dto/update-numbering.dto';
+import { UpdateLeaveApprovalDto } from './dto/update-leave-approval.dto';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.decorator';
@@ -48,6 +50,26 @@ export class OrganizationController {
   @Patch('branding') @Roles(...HR_MANAGEMENT_ROLES)
   updateBranding(@CurrentUser() user: AuthUser, @Body() dto: UpdateBrandingDto) {
     return this.org.updateBranding(user.organizationId, dto);
+  }
+
+  @Get('leave-approval') @Roles(...HR_MANAGEMENT_ROLES)
+  getLeaveApproval(@CurrentUser() user: AuthUser) {
+    return this.org.getLeaveApproval(user.organizationId);
+  }
+
+  @Patch('leave-approval') @Roles(...HR_MANAGEMENT_ROLES)
+  updateLeaveApproval(@CurrentUser() user: AuthUser, @Body() dto: UpdateLeaveApprovalDto) {
+    return this.org.updateLeaveApproval(user.organizationId, dto);
+  }
+
+  @Get('employee-numbering') @Roles(...HR_MANAGEMENT_ROLES)
+  getNumbering(@CurrentUser() user: AuthUser) {
+    return this.org.getNumbering(user.organizationId);
+  }
+
+  @Patch('employee-numbering') @Roles(...HR_MANAGEMENT_ROLES)
+  updateNumbering(@CurrentUser() user: AuthUser, @Body() dto: UpdateNumberingDto) {
+    return this.org.updateNumbering(user.organizationId, dto);
   }
 
   @Post('logo') @Roles(...HR_MANAGEMENT_ROLES)

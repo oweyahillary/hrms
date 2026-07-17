@@ -3,6 +3,10 @@ import { PRISMA, type ExtendedPrismaClient } from '../prisma/prisma.service';
 import { FileStorageService } from '../storage/file-storage.service';
 import { ALLOWED_LOGO_MIME, MAX_LOGO_BYTES, contentTypeFromName } from '../storage/storage-path';
 import type { UpdateBrandingDto } from './dto/update-branding.dto';
+import type { UpdateNumberingDto } from './dto/update-numbering.dto';
+import type { UpdateLeaveApprovalDto } from './dto/update-leave-approval.dto';
+import { formatEmployeeNumber } from '../employees/employee-number';
+import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
 
 export interface UploadedFileLike {
   originalname: string;
@@ -61,6 +65,102 @@ export class OrganizationService {
       bankPurposeCode: org.bankPurposeCode,
       hasLogo: org.logoPath != null,
     };
+  }
+
+  /** Leave approval policy: who signs off, and whether employees may choose. */
+  async getLeaveApproval(orgId: string) {
+    const org = (await this.prisma.organization.findFirst({
+      where: { id: orgId },
+      select: {
+        leaveApprovalMode: true, leaveHrApproverUserId: true, allowEmployeeChosenApprovers: true,
+      },
+    })) as unknown as {
+      leaveApprovalMode: string;
+      leaveHrApproverUserId: string | null;
+      allowEmployeeChosenApprovers: boolean;
+    } | null;
+    if (!org) throw new NotFoundException('Organization not found');
+
+    // The approver is a plain column, so resolve the name here rather than
+    // handing the UI an id it can't turn into a person.
+    let hrApproverName: string | null = null;
+    if (org.leaveHrApproverUserId) {
+      const u = (await this.prisma.user.findFirst({
+        where: { id: org.leaveHrApproverUserId },
+        include: { employee: { select: { firstName: true, lastName: true } } },
+      } as never)) as unknown as {
+        email: string; employee?: { firstName: string; lastName: string } | null;
+      } | null;
+      hrApproverName = u ? (u.employee ? `${u.employee.firstName} ${u.employee.lastName}` : u.email) : null;
+    }
+
+    return {
+      leaveApprovalMode: org.leaveApprovalMode,
+      leaveHrApproverUserId: org.leaveHrApproverUserId,
+      hrApproverName,
+      allowEmployeeChosenApprovers: org.allowEmployeeChosenApprovers,
+      /** True when nothing can be approved — worth surfacing before someone applies. */
+      needsHrApprover: org.leaveHrApproverUserId == null,
+    };
+  }
+
+  async updateLeaveApproval(orgId: string, dto: UpdateLeaveApprovalDto) {
+    // leaveHrApproverUserId is a plain column (see schema.prisma) — nothing at
+    // the database level stops a dangling or unsuitable id, so check here.
+    if (dto.leaveHrApproverUserId) {
+      const u = (await this.prisma.user.findFirst({
+        where: { id: dto.leaveHrApproverUserId },
+        include: { role: { select: { name: true } } },
+      } as never)) as unknown as { isActive: boolean; role?: { name: string } } | null;
+      if (!u) throw new BadRequestException('leaveHrApproverUserId does not exist');
+      if (!u.isActive) throw new BadRequestException('That user is deactivated and cannot approve leave');
+      if (!HR_MANAGEMENT_ROLES.includes(u.role?.name ?? '')) {
+        throw new BadRequestException('The leave approver must hold an HR or Admin role');
+      }
+    }
+
+    const data: Record<string, unknown> = {};
+    if (dto.leaveApprovalMode !== undefined) data.leaveApprovalMode = dto.leaveApprovalMode;
+    if (dto.leaveHrApproverUserId !== undefined) data.leaveHrApproverUserId = dto.leaveHrApproverUserId;
+    if (dto.allowEmployeeChosenApprovers !== undefined) {
+      data.allowEmployeeChosenApprovers = dto.allowEmployeeChosenApprovers;
+    }
+    await this.prisma.organization.update({ where: { id: orgId }, data });
+    return this.getLeaveApproval(orgId);
+  }
+
+  /** Employee-number auto-numbering config. Admin/HR only (set via settings). */
+  async getNumbering(orgId: string) {
+    const org = (await this.prisma.organization.findFirst({
+      where: { id: orgId },
+      select: {
+        employeeNumberPrefix: true, employeeNumberPadding: true, employeeNumberNextSeq: true,
+      },
+    })) as unknown as {
+      employeeNumberPrefix: string | null;
+      employeeNumberPadding: number;
+      employeeNumberNextSeq: number;
+    } | null;
+    if (!org) throw new NotFoundException('Organization not found');
+    return {
+      employeeNumberPrefix: org.employeeNumberPrefix,
+      employeeNumberPadding: org.employeeNumberPadding,
+      employeeNumberNextSeq: org.employeeNumberNextSeq,
+      autoNumbering: org.employeeNumberPrefix != null,
+      preview: org.employeeNumberPrefix
+        ? formatEmployeeNumber(org.employeeNumberPrefix, org.employeeNumberPadding, org.employeeNumberNextSeq)
+        : null,
+    };
+  }
+
+  async updateNumbering(orgId: string, dto: UpdateNumberingDto) {
+    const data: Record<string, unknown> = {};
+    // `null` clears the prefix (turns auto-numbering off); `undefined` leaves it.
+    if (dto.employeeNumberPrefix !== undefined) data.employeeNumberPrefix = dto.employeeNumberPrefix;
+    if (dto.employeeNumberPadding !== undefined) data.employeeNumberPadding = dto.employeeNumberPadding;
+    if (dto.employeeNumberNextSeq !== undefined) data.employeeNumberNextSeq = dto.employeeNumberNextSeq;
+    await this.prisma.organization.update({ where: { id: orgId }, data });
+    return this.getNumbering(orgId);
   }
 
   async getBranding(orgId: string) {

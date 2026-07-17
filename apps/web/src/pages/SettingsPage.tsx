@@ -139,7 +139,7 @@ export function SettingsPage() {
   return (
     <Stack gap="lg" maw={880}>
       <div>
-        <Title order={1}>Settings</Title>
+        <Title order={1}>Organisation</Title>
         <Text c="sand.6" mt={4}>Your organisation’s identity across the app and payslips</Text>
       </div>
 

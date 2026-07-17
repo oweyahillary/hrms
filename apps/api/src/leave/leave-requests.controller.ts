@@ -22,6 +22,18 @@ export class LeaveRequestsController {
     return this.requests.inbox(user);
   }
 
+  /** Approver picker options. Also before ':id' for the same reason. */
+  @Get('approvers')
+  approvers() {
+    return this.requests.approvers();
+  }
+
+  /** Who WILL approve this employee's leave, under the org's policy. */
+  @Get('approvers-for')
+  approversFor(@Query('employeeId') employeeId: string) {
+    return this.requests.approversFor(employeeId);
+  }
+
   @Get()
   list(@Query() query: QueryLeaveRequestDto, @CurrentUser() user: AuthUser) {
     return this.requests.list(user, query);

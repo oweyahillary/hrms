@@ -4,8 +4,13 @@ import {
 import { KENYA_PHONE_REGEX, KRA_PIN_REGEX, NATIONAL_ID_REGEX } from '../../common/validation/kenya';
 
 export class CreateEmployeeDto {
-  @IsString() @MinLength(1)
-  employeeNumber!: string;
+  /**
+   * Optional. When omitted, the number is allocated from the organisation's
+   * employee-number prefix + counter. If auto-numbering isn't configured, an
+   * omitted number is a 400 telling the caller to set a prefix or supply one.
+   */
+  @IsOptional() @IsString() @MinLength(1)
+  employeeNumber?: string;
 
   @IsString() @MinLength(1)
   firstName!: string;
