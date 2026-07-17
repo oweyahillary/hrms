@@ -8,6 +8,7 @@ import type { UpdateDepartmentDto } from './dto/update-department.dto';
 
 interface DeptRow {
   id: string; name: string; parentDepartmentId: string | null;
+  headEmployeeId: string | null;
   createdAt: Date; updatedAt: Date;
   _count?: { employees: number; subDepartments: number };
 }
@@ -20,11 +21,25 @@ export class DepartmentsService {
 
   async create(dto: CreateDepartmentDto) {
     if (dto.parentDepartmentId) await this.assertParentExists(dto.parentDepartmentId);
+    if (dto.headEmployeeId) await this.assertEmployeeExists(dto.headEmployeeId);
     const row = (await this.prisma.department.create({
-      data: { name: dto.name, parentDepartmentId: dto.parentDepartmentId ?? null } as never,
+      data: {
+        name: dto.name,
+        parentDepartmentId: dto.parentDepartmentId ?? null,
+        headEmployeeId: dto.headEmployeeId ?? null,
+      } as never,
       include: withCounts,
     })) as unknown as DeptRow;
     return this.toResponse(row);
+  }
+
+  /**
+   * headEmployeeId is a plain column, not a FK (see schema.prisma), so nothing
+   * at the database level stops a dangling id — check it here.
+   */
+  private async assertEmployeeExists(employeeId: string): Promise<void> {
+    const emp = await this.prisma.employee.findFirst({ where: { id: employeeId } });
+    if (!emp) throw new BadRequestException('headEmployeeId does not exist');
   }
 
   async list() {
@@ -50,9 +65,12 @@ export class DepartmentsService {
       await this.assertNoCycle(id, dto.parentDepartmentId);
     }
 
+    if (dto.headEmployeeId) await this.assertEmployeeExists(dto.headEmployeeId);
+
     const data: Record<string, unknown> = {};
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.parentDepartmentId !== undefined) data.parentDepartmentId = dto.parentDepartmentId;
+    if (dto.headEmployeeId !== undefined) data.headEmployeeId = dto.headEmployeeId;
 
     const row = (await this.prisma.department.update({
       where: { id }, data: data as never, include: withCounts,
@@ -99,6 +117,7 @@ export class DepartmentsService {
       id: row.id,
       name: row.name,
       parentDepartmentId: row.parentDepartmentId,
+      headEmployeeId: row.headEmployeeId,
       employeeCount: row._count?.employees ?? 0,
       subDepartmentCount: row._count?.subDepartments ?? 0,
       createdAt: row.createdAt,

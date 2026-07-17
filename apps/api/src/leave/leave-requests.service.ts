@@ -4,8 +4,13 @@ import {
 import { PRISMA, type ExtendedPrismaClient } from '../prisma/prisma.service';
 import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
 import type { AuthUser } from '../auth/decorators/current-user.decorator';
-import { availableDays, countWorkingDays, toISODate } from './leave-math';
+import {
+  availableDaysAsOf, carryOverLastUsableDate, countWorkingDays, expiredCarryOverDays, toISODate,
+} from './leave-math';
 import { awaitsApprovalBy, currentPendingStep, isLastStep, type ApprovalStepLike } from './leave-approval';
+import {
+  describeRule, resolveApprovers, type LeaveApprovalMode, type ResolvedApprovers,
+} from './leave-approver-policy';
 import type { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import type { QueryLeaveRequestDto } from './dto/query-leave-request.dto';
 
@@ -16,6 +21,7 @@ interface RequestRow {
   reason: string | null; createdAt: Date;
   approvalSteps?: StepRow[];
   leaveType?: { name: string };
+  employee?: { firstName: string; lastName: string; employeeNumber: string };
 }
 
 const num = (v: unknown): number => Number(v ?? 0);
@@ -24,6 +30,11 @@ const isPrivileged = (role: string) => HR_MANAGEMENT_ROLES.includes(role);
 const requestInclude = {
   approvalSteps: { orderBy: { stepOrder: 'asc' as const } },
   leaveType: { select: { name: true } },
+  // Name, not just id: a request list is unreadable as UUIDs, and the
+  // alternative — having every caller fetch the whole staff list to resolve one
+  // name — would hand the employee directory to people who shouldn't see it.
+  // These columns are plaintext (only nationalId/kraPin/bank are encrypted).
+  employee: { select: { firstName: true, lastName: true, employeeNumber: true } },
 };
 
 @Injectable()
@@ -45,13 +56,31 @@ export class LeaveRequestsService {
     if (!emp) throw new BadRequestException('employeeId does not exist');
     if (!type) throw new BadRequestException('leaveTypeId does not exist');
 
-    const approverIds = dto.approverUserIds;
-    if (new Set(approverIds).size !== approverIds.length) {
-      throw new BadRequestException('approverUserIds contains duplicates');
-    }
-    const approvers = await this.prisma.user.findMany({ where: { id: { in: approverIds } } });
-    if ((approvers as unknown[]).length !== approverIds.length) {
-      throw new BadRequestException('One or more approverUserIds do not exist');
+    const policy = await this.approvalPolicy();
+
+    let approverIds: string[];
+    if (policy.allowEmployeeChosenApprovers && dto.approverUserIds?.length) {
+      // The organisation has explicitly opted into letting applicants choose.
+      approverIds = dto.approverUserIds;
+      if (new Set(approverIds).size !== approverIds.length) {
+        throw new BadRequestException('approverUserIds contains duplicates');
+      }
+      const approvers = await this.prisma.user.findMany({ where: { id: { in: approverIds } } });
+      if ((approvers as unknown[]).length !== approverIds.length) {
+        throw new BadRequestException('One or more approverUserIds do not exist');
+      }
+    } else {
+      // Derived from policy. Anything the client sent is ignored on purpose:
+      // silently honouring it would let a caller bypass the whole control by
+      // posting straight to the API.
+      const resolved = await this.resolveFor(dto.employeeId, policy);
+      if (resolved.approverUserIds.length === 0) {
+        throw new BadRequestException(
+          'No approver could be determined for this employee. '
+          + 'Set a leave approver in Settings, or give the department a head who has a login.',
+        );
+      }
+      approverIds = resolved.approverUserIds;
     }
 
     const start = new Date(dto.startDate);
@@ -68,9 +97,25 @@ export class LeaveRequestsService {
       where: { employeeId: dto.employeeId, leaveTypeId: dto.leaveTypeId, year },
     })) as unknown as { accruedDays: unknown; carriedOverDays: unknown; usedDays: unknown } | null;
     if (balance) {
-      const avail = availableDays(num(balance.accruedDays), num(balance.carriedOverDays), num(balance.usedDays));
+      // Availability is judged as of the leave START date, not today: carried
+      // days that lapse before the leave is taken can't pay for it. Booking in
+      // March for April leave must not spend days that expire on 1 April.
+      const expiryMonths = (type as { carryOverExpiryMonths?: number | null }).carryOverExpiryMonths ?? null;
+      const accrued = num(balance.accruedDays);
+      const carried = num(balance.carriedOverDays);
+      const used = num(balance.usedDays);
+      const avail = availableDaysAsOf(accrued, carried, used, year, expiryMonths, start);
+
       if (days > avail) {
-        throw new BadRequestException(`Insufficient balance: ${days} day(s) requested, ${avail} available`);
+        // Say WHY when expiry is the reason, or the number looks arbitrary.
+        const lapsed = expiredCarryOverDays(carried, used, year, expiryMonths, start);
+        const lastUsable = carryOverLastUsableDate(year, expiryMonths);
+        const because = lapsed > 0 && lastUsable
+          ? ` — ${lapsed} carried day(s) had to be used by ${lastUsable}`
+          : '';
+        throw new BadRequestException(
+          `Insufficient balance: ${days} day(s) requested, ${avail} available${because}`,
+        );
       }
     }
 
@@ -116,6 +161,150 @@ export class LeaveRequestsService {
   }
 
   /** Requests currently awaiting THIS user's approval. */
+  /** The organisation's leave approval policy. */
+  private async approvalPolicy(): Promise<{
+    mode: LeaveApprovalMode; hrApproverUserId: string | null; allowEmployeeChosenApprovers: boolean;
+  }> {
+    const org = (await this.prisma.organization.findFirst({
+      select: {
+        leaveApprovalMode: true, leaveHrApproverUserId: true, allowEmployeeChosenApprovers: true,
+      },
+    } as never)) as unknown as {
+      leaveApprovalMode: string;
+      leaveHrApproverUserId: string | null;
+      allowEmployeeChosenApprovers: boolean;
+    } | null;
+    return {
+      mode: (org?.leaveApprovalMode ?? 'DEPT_HEAD_THEN_HR') as LeaveApprovalMode,
+      hrApproverUserId: org?.leaveHrApproverUserId ?? null,
+      allowEmployeeChosenApprovers: org?.allowEmployeeChosenApprovers ?? false,
+    };
+  }
+
+  /**
+   * Gather what the policy needs — the applicant's login, their department's
+   * head, and that head's login — and resolve the approver chain.
+   *
+   * A head with no user account can't be an approver (an approval step points at
+   * a User), so the policy falls back to HR rather than creating a request that
+   * nobody is able to action.
+   */
+  private async resolveFor(
+    employeeId: string,
+    policy: { mode: LeaveApprovalMode; hrApproverUserId: string | null },
+  ): Promise<ResolvedApprovers> {
+    const emp = (await this.prisma.employee.findFirst({
+      where: { id: employeeId },
+      select: { id: true, departmentId: true, user: { select: { id: true } } },
+    } as never)) as unknown as {
+      id: string; departmentId: string | null; user?: { id: string } | null;
+    } | null;
+
+    let headEmployeeId: string | null = null;
+    let headUserId: string | null = null;
+    if (emp?.departmentId) {
+      const dept = (await this.prisma.department.findFirst({
+        where: { id: emp.departmentId }, select: { headEmployeeId: true },
+      } as never)) as unknown as { headEmployeeId: string | null } | null;
+      headEmployeeId = dept?.headEmployeeId ?? null;
+      if (headEmployeeId) {
+        const headUser = (await this.prisma.user.findFirst({
+          where: { employeeId: headEmployeeId, isActive: true }, select: { id: true },
+        } as never)) as unknown as { id: string } | null;
+        headUserId = headUser?.id ?? null;
+      }
+    }
+
+    return resolveApprovers({
+      mode: policy.mode,
+      applicantEmployeeId: employeeId,
+      applicantUserId: emp?.user?.id ?? null,
+      departmentHeadEmployeeId: headEmployeeId,
+      departmentHeadUserId: headUserId,
+      hrApproverUserId: policy.hrApproverUserId,
+    });
+  }
+
+  /**
+   * Preview who will approve a given employee's leave, so the apply screen can
+   * state it plainly instead of asking the applicant to choose.
+   */
+  async approversFor(employeeId: string) {
+    const policy = await this.approvalPolicy();
+    const resolved = await this.resolveFor(employeeId, policy);
+
+    const users = resolved.approverUserIds.length
+      ? ((await this.prisma.user.findMany({
+          where: { id: { in: resolved.approverUserIds } },
+          include: {
+            role: { select: { name: true } },
+            employee: { select: { firstName: true, lastName: true } },
+          },
+        } as never)) as unknown as Array<{
+          id: string; email: string;
+          role?: { name: string };
+          employee?: { firstName: string; lastName: string } | null;
+        }>)
+      : [];
+    const byId = new Map(users.map((u) => [u.id, u]));
+
+    return {
+      // Order matters: these approve in sequence.
+      approvers: resolved.approverUserIds.map((id, i) => {
+        const u = byId.get(id);
+        return {
+          step: i + 1,
+          userId: id,
+          name: u ? (u.employee ? `${u.employee.firstName} ${u.employee.lastName}` : u.email) : 'Unknown',
+          role: u?.role?.name ?? '',
+        };
+      }),
+      rule: resolved.rule,
+      explanation: describeRule(resolved.rule),
+      /** True when the applicant may override the chain. */
+      employeeMayChoose: policy.allowEmployeeChosenApprovers,
+      /** True when nothing can be approved — the apply screen should say so. */
+      unresolved: resolved.approverUserIds.length === 0,
+    };
+  }
+
+  /**
+   * People who can be picked as approvers on a leave request.
+   *
+   * Deliberately NOT a general user directory: it returns only users holding an
+   * HR/management role, and only id/name/role — no emails, no login state. Any
+   * authenticated user can read it because anyone applying for leave has to
+   * choose an approver, and you're about to send that person your request
+   * anyway.
+   *
+   * (There is no manager relationship on Employee, so the approver can't be
+   * derived — it has to be chosen. If a reporting line is added later, this is
+   * the thing to replace.)
+   */
+  async approvers() {
+    const rows = (await this.prisma.user.findMany({
+      where: { isActive: true, role: { name: { in: [...HR_MANAGEMENT_ROLES] } } } as never,
+      include: {
+        role: { select: { name: true } },
+        employee: { select: { firstName: true, lastName: true } },
+      },
+    } as never)) as unknown as Array<{
+      id: string; email: string;
+      role?: { name: string };
+      employee?: { firstName: string; lastName: string } | null;
+    }>;
+
+    return rows
+      .map((u) => ({
+        id: u.id,
+        // Prefer the human's name; fall back to the login when a user isn't
+        // linked to an employee record (the seeded admin, for one).
+        name: u.employee ? `${u.employee.firstName} ${u.employee.lastName}` : u.email,
+        role: u.role?.name ?? '',
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
   async inbox(actor: AuthUser) {
     const rows = (await this.prisma.leaveRequest.findMany({
       where: { status: 'PENDING' }, include: requestInclude,
@@ -205,6 +394,8 @@ export class LeaveRequestsService {
     return {
       id: r.id,
       employeeId: r.employeeId,
+      employeeName: r.employee ? `${r.employee.firstName} ${r.employee.lastName}` : null,
+      employeeNumber: r.employee?.employeeNumber ?? null,
       leaveTypeId: r.leaveTypeId,
       leaveTypeName: r.leaveType?.name,
       startDate: r.startDate,

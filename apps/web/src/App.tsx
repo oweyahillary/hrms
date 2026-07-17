@@ -5,7 +5,17 @@ import { LoginPage } from './pages/LoginPage';
 import { SsoCallbackPage } from './pages/SsoCallbackPage';
 import { ChangePasswordPage } from './pages/ChangePasswordPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { EmployeesPage } from './pages/EmployeesPage';
+import { EmployeeDetailPage } from './pages/EmployeeDetailPage';
+import { EmployeeCreatePage } from './pages/EmployeeCreatePage';
+import { EmployeeEditPage } from './pages/EmployeeEditPage';
+import { LeavePage } from './pages/LeavePage';
+import { LeaveApplyPage } from './pages/LeaveApplyPage';
+import { LeaveBalancesPage } from './pages/LeaveBalancesPage';
+import { LeaveTypesPage } from './pages/LeaveTypesPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { SettingsLeavePage } from './pages/SettingsLeavePage';
+import { SettingsNumberingPage } from './pages/SettingsNumberingPage';
 
 function Placeholder({ name }: { name: string }) {
   return <div style={{ color: 'var(--mantine-color-sand-6)' }}>{name} — coming soon</div>;
@@ -24,10 +34,18 @@ export function App() {
             <AppShellLayout>
               <Routes>
                 <Route path="/" element={<DashboardPage />} />
-                <Route path="/employees" element={<Placeholder name="Employees" />} />
-                <Route path="/leave" element={<Placeholder name="Leave" />} />
+                <Route path="/employees" element={<EmployeesPage />} />
+                <Route path="/employees/new" element={<EmployeeCreatePage />} />
+                <Route path="/employees/:id" element={<EmployeeDetailPage />} />
+                <Route path="/employees/:id/edit" element={<EmployeeEditPage />} />
+                <Route path="/leave" element={<LeavePage />} />
+                <Route path="/leave/apply" element={<LeaveApplyPage />} />
+                <Route path="/leave/balances" element={<LeaveBalancesPage />} />
+                <Route path="/leave/types" element={<LeaveTypesPage />} />
                 <Route path="/payroll" element={<Placeholder name="Payroll" />} />
                 <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/settings/leave" element={<SettingsLeavePage />} />
+                <Route path="/settings/numbering" element={<SettingsNumberingPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </AppShellLayout>

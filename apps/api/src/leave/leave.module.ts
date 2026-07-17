@@ -7,10 +7,21 @@ import { LeaveRequestsController } from './leave-requests.controller';
 import { LeaveRequestsService } from './leave-requests.service';
 import { LeaveAccrualController } from './leave-accrual.controller';
 import { LeaveAccrualService } from './leave-accrual.service';
+import { LeaveRolloverController } from './leave-rollover.controller';
+import { LeaveRolloverService } from './leave-rollover.service';
 
 @Module({
-  controllers: [LeaveTypesController, LeaveBalancesController, LeaveRequestsController, LeaveAccrualController],
-  providers: [LeaveTypesService, LeaveBalancesService, LeaveRequestsService, LeaveAccrualService],
-  exports: [LeaveTypesService, LeaveBalancesService, LeaveRequestsService, LeaveAccrualService],
+  controllers: [
+    LeaveTypesController, LeaveBalancesController, LeaveRequestsController,
+    LeaveAccrualController, LeaveRolloverController,
+  ],
+  providers: [
+    LeaveTypesService, LeaveBalancesService, LeaveRequestsService,
+    LeaveAccrualService, LeaveRolloverService,
+  ],
+  exports: [
+    LeaveTypesService, LeaveBalancesService, LeaveRequestsService,
+    LeaveAccrualService, LeaveRolloverService,
+  ],
 })
 export class LeaveModule {}

@@ -144,6 +144,18 @@ jobs:
           npx ts-node scripts/verify-leave-accrual.ts
           echo "::endgroup::"
 
+          echo "::group::verify employees"
+          npx ts-node scripts/verify-employees.ts
+          echo "::endgroup::"
+
+          echo "::group::verify leave-rollover"
+          npx ts-node scripts/verify-leave-rollover.ts
+          echo "::endgroup::"
+
+          echo "::group::verify leave-approvers"
+          npx ts-node scripts/verify-leave-approvers.ts
+          echo "::endgroup::"
+
           echo "::group::verify password-change"
           npx ts-node scripts/verify-password-change.ts
           echo "::endgroup::"

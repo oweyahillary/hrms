@@ -1,5 +1,5 @@
 import {
-  ConflictException, Inject, Injectable, NotFoundException,
+  BadRequestException, ConflictException, Inject, Injectable, NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PRISMA, type ExtendedPrismaClient } from '../prisma/prisma.service';
@@ -7,16 +7,54 @@ import { Prisma } from '../generated/prisma/client';
 import { CryptoService } from '../crypto/crypto.service';
 import { isPiiPrivileged, presentPii } from './employee-pii';
 import { EMPLOYEE_ANON_MARKER } from './anonymization';
+import { formatEmployeeNumber } from './employee-number';
+import { getRequestContext } from '../common/context/request-context';
 import type { CreateEmployeeDto } from './dto/create-employee.dto';
 import type { UpdateEmployeeDto } from './dto/update-employee.dto';
 import type { TerminateEmployeeDto } from './dto/terminate-employee.dto';
-import type { ListEmployeesDto } from './dto/list-employees.dto';
+import type { EmployeeSortField, ListEmployeesDto } from './dto/list-employees.dto';
+
+/**
+ * Columns the list view needs. Deliberately EXCLUDES the encrypted columns
+ * (nationalId / kraPin / bankAccountNumber): a table never renders them, and
+ * fetching them meant decrypting three values per row (75 crypto ops for a
+ * 25-row page) and putting national IDs on the wire for a view that doesn't
+ * show them. Detail (`GET /employees/:id`) still returns the full record.
+ */
+const LIST_SELECT = {
+  id: true, employeeNumber: true, firstName: true, lastName: true,
+  phone: true, email: true, departmentId: true, jobTitleId: true,
+  employmentType: true, employmentStatus: true, hireDate: true, exitDate: true,
+  createdAt: true,
+} as const;
+
+interface EmployeeListRow {
+  id: string; employeeNumber: string; firstName: string; lastName: string;
+  phone: string | null; email: string | null;
+  departmentId: string | null; jobTitleId: string | null;
+  employmentType: string; employmentStatus: string;
+  hireDate: Date; exitDate: Date | null; createdAt: Date;
+}
+
+/** Map the sort whitelist to Prisma orderBy. `name` sorts by surname then first name. */
+function orderByFor(sort: EmployeeSortField, order: 'asc' | 'desc'): Record<string, unknown>[] {
+  if (sort === 'name') return [{ lastName: order }, { firstName: order }];
+  return [{ [sort]: order }];
+}
+
+/** The org's numbering config, as read for allocation/preview. */
+interface OrgNumbering {
+  employeeNumberPrefix: string | null;
+  employeeNumberPadding: number;
+  employeeNumberNextSeq: number;
+}
 
 // Shape of the raw employee row we read back from Prisma (subset we use).
 interface EmployeeRow {
   id: string; employeeNumber: string; firstName: string; lastName: string;
   nationalId: string; kraPin: string | null; bankAccountNumber: string | null;
-  bankName: string | null; phone: string | null; email: string | null;
+  bankName: string | null; bankCode: string | null; bankBranchCode: string | null;
+  phone: string | null; email: string | null;
   dateOfBirth: Date | null; gender: string | null;
   departmentId: string | null; jobTitleId: string | null;
   employmentType: string; employmentStatus: string;
@@ -31,9 +69,79 @@ export class EmployeesService {
     private readonly crypto: CryptoService,
   ) {}
 
+  /**
+   * Read the org's numbering config without consuming a number.
+   * `next` is a PREVIEW ONLY — it is not reserved. Two people opening the form
+   * at once will both see the same preview; the real number is allocated at save
+   * time, so they end up with different ones.
+   */
+  async numberingPreview(): Promise<{ autoNumbering: boolean; prefix: string | null; next: string | null }> {
+    const orgId = getRequestContext().organizationId;
+    const org = (await this.prisma.organization.findFirst({
+      where: { id: orgId },
+      select: { employeeNumberPrefix: true, employeeNumberPadding: true, employeeNumberNextSeq: true },
+    })) as unknown as OrgNumbering | null;
+    if (!org?.employeeNumberPrefix) return { autoNumbering: false, prefix: null, next: null };
+    return {
+      autoNumbering: true,
+      prefix: org.employeeNumberPrefix,
+      next: formatEmployeeNumber(org.employeeNumberPrefix, org.employeeNumberPadding, org.employeeNumberNextSeq),
+    };
+  }
+
+  /**
+   * Hand out the next employee number, consuming it.
+   *
+   * The counter lives on the organisation row and is bumped with an atomic
+   * `increment`, so two concurrent creates take a row lock in turn and can never
+   * read the same value — this is why the sequence isn't derived from
+   * MAX(employeeNumber)+1, which races and would also choke on the mixed legacy
+   * formats already in the table (EMP-001, SMOKE-1784…, P9-…).
+   *
+   * A number may still be taken if someone typed it in manually, so we skip past
+   * collisions. The DB's @@unique([organizationId, employeeNumber]) remains the
+   * final backstop and surfaces as a 409.
+   */
+  private async allocateEmployeeNumber(): Promise<string> {
+    const orgId = getRequestContext().organizationId;
+    if (!orgId) throw new ConflictException('No organisation context for numbering');
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      // Returns the POST-increment row, so the value we own is next - 1.
+      const org = (await this.prisma.organization.update({
+        where: { id: orgId },
+        data: { employeeNumberNextSeq: { increment: 1 } },
+        select: { employeeNumberPrefix: true, employeeNumberPadding: true, employeeNumberNextSeq: true },
+      })) as unknown as OrgNumbering;
+
+      if (!org.employeeNumberPrefix) {
+        throw new BadRequestException(
+          'employeeNumber is required: automatic numbering is off. Set an employee number prefix in '
+          + 'organisation settings, or supply employeeNumber explicitly.',
+        );
+      }
+
+      const seq = org.employeeNumberNextSeq - 1;
+      const candidate = formatEmployeeNumber(org.employeeNumberPrefix, org.employeeNumberPadding, seq);
+      const taken = await this.prisma.employee.count({ where: { employeeNumber: candidate } });
+      if (taken === 0) return candidate;
+      // Otherwise the counter has already advanced; loop and try the next one.
+    }
+    throw new ConflictException(
+      'Could not allocate an employee number — the next 20 candidates are all taken. '
+      + 'Check the employee number prefix in organisation settings.',
+    );
+  }
+
   async create(dto: CreateEmployeeDto, actorRole: string) {
+    // An explicit number always wins (needed when migrating staff who already
+    // have one); auto-numbering only fills the gap when it's omitted.
+    const employeeNumber = dto.employeeNumber?.trim()
+      ? dto.employeeNumber.trim()
+      : await this.allocateEmployeeNumber();
+
     const data: Record<string, unknown> = {
-      employeeNumber: dto.employeeNumber,
+      employeeNumber,
       firstName: dto.firstName,
       lastName: dto.lastName,
       nationalId: await this.crypto.encrypt(dto.nationalId),
@@ -71,21 +179,42 @@ export class EmployeesService {
     }
   }
 
-  async list(query: ListEmployeesDto, actorRole: string) {
+  async list(query: ListEmployeesDto) {
     const where: Record<string, unknown> = {};
     if (query.status) where.employmentStatus = query.status;
     if (query.departmentId) where.departmentId = query.departmentId;
+    if (query.q) {
+      // Plaintext columns only. The tenant extension adds organizationId at the
+      // top level of `where`, which ANDs with this OR block — so search can
+      // never reach across orgs.
+      where.OR = [
+        { firstName: { contains: query.q, mode: 'insensitive' } },
+        { lastName: { contains: query.q, mode: 'insensitive' } },
+        { employeeNumber: { contains: query.q, mode: 'insensitive' } },
+      ];
+    }
 
     const skip = (query.page - 1) * query.pageSize;
     const [rows, total] = await Promise.all([
       this.prisma.employee.findMany({
-        where, skip, take: query.pageSize, orderBy: { createdAt: 'desc' },
-      }) as unknown as Promise<EmployeeRow[]>,
+        where,
+        select: LIST_SELECT,
+        skip,
+        take: query.pageSize,
+        orderBy: orderByFor(query.sort, query.order),
+      }) as unknown as Promise<EmployeeListRow[]>,
       this.prisma.employee.count({ where }) as unknown as Promise<number>,
     ]);
 
-    const data = await Promise.all(rows.map((r) => this.toResponse(r, actorRole)));
-    return { data, page: query.page, pageSize: query.pageSize, total };
+    // No decryption here — LIST_SELECT omits every encrypted column, so there is
+    // no PII to mask and no per-row crypto cost.
+    return {
+      data: rows.map((r) => ({ ...r, fullName: `${r.firstName} ${r.lastName}` })),
+      page: query.page,
+      pageSize: query.pageSize,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / query.pageSize)),
+    };
   }
 
   async get(id: string, actorRole: string) {
@@ -124,8 +253,12 @@ export class EmployeesService {
     assign('bankName', dto.bankName);
     assign('bankCode', dto.bankCode);
     assign('bankBranchCode', dto.bankBranchCode);
-    if (dto.dateOfBirth !== undefined) data.dateOfBirth = new Date(dto.dateOfBirth);
-    if (dto.hireDate !== undefined) data.hireDate = new Date(dto.hireDate);
+    // `new Date(null)` is 1970-01-01, not null — so clearing a date has to be
+    // handled explicitly or a cleared DOB silently becomes the epoch.
+    if (dto.dateOfBirth !== undefined) {
+      data.dateOfBirth = dto.dateOfBirth ? new Date(dto.dateOfBirth) : null;
+    }
+    if (dto.hireDate !== undefined && dto.hireDate) data.hireDate = new Date(dto.hireDate);
     if (dto.nextOfKin !== undefined) data.nextOfKin = dto.nextOfKin;
 
     // Re-encrypt PII + refresh blind indexes when supplied.
@@ -171,14 +304,32 @@ export class EmployeesService {
    * Irreversibly anonymize an employee's identifying PII in place (DPA erasure).
    * Payslips, audit logs and other statutory records are preserved (referential
    * integrity + legal retention). Idempotent: a second call is a no-op.
+   *
+   * ERASURE IS FOR LEAVERS. A current employee's data can't be erased — it's
+   * needed to pay them and to file their PAYE, which is a lawful basis to refuse
+   * the request. Enforcing that here also keeps the record coherent: without it
+   * you get an ACTIVE employee with no name and no bank account, who then still
+   * counts toward headcount and shows up in payroll pickers. Terminate first,
+   * then erase.
    */
   async anonymize(id: string) {
     const row = (await this.prisma.employee.findFirst({ where: { id } })) as unknown as EmployeeRow | null;
     if (!row) throw new NotFoundException('Employee not found');
 
     const payslips = await this.prisma.payslip.count({ where: { employeeId: id } as never });
+
+    // Idempotency is checked BEFORE the status guard on purpose: a record erased
+    // under the old rules may still be ACTIVE, and re-erasing it must stay a
+    // harmless no-op rather than start throwing.
     if (row.firstName === EMPLOYEE_ANON_MARKER) {
       return { employeeId: id, anonymized: true, alreadyAnonymized: true, retained: { payslips } };
+    }
+
+    if (row.employmentStatus !== 'EXITED') {
+      throw new ConflictException(
+        `Cannot erase an employee whose status is ${row.employmentStatus}. Erasure is for people who have left: `
+        + 'terminate them first (POST /employees/:id/terminate), then erase.',
+      );
     }
 
     const tombstone = await this.crypto.encrypt('ERASED');
@@ -219,6 +370,11 @@ export class EmployeesService {
       kraPin: presentPii(kraPin, privileged),
       bankAccountNumber: presentPii(bankAccountNumber, privileged),
       bankName: row.bankName,
+      // Routing codes are public bank identifiers (not PII) and are accepted by
+      // create/update — they were simply never returned, so a client could write
+      // them but not read them back. Needed by the employee detail screen.
+      bankCode: row.bankCode,
+      bankBranchCode: row.bankBranchCode,
       phone: row.phone,
       email: row.email,
       dateOfBirth: row.dateOfBirth,

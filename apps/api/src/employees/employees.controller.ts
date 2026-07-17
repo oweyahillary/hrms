@@ -26,9 +26,11 @@ export class EmployeesController {
     return this.employees.create(dto, user.role);
   }
 
+  // The list payload carries no PII (see LIST_SELECT), so unlike the other
+  // reads it doesn't need the caller's role to decide masking.
   @Get()
-  list(@Query() query: ListEmployeesDto, @CurrentUser() user: AuthUser) {
-    return this.employees.list(query, user.role);
+  list(@Query() query: ListEmployeesDto) {
+    return this.employees.list(query);
   }
 
   // Declared BEFORE :id so '/employees/lookup' isn't captured as an id.
@@ -36,6 +38,16 @@ export class EmployeesController {
   @Roles(...MANAGE)
   lookup(@Query() dto: LookupEmployeeDto, @CurrentUser() user: AuthUser) {
     return this.employees.lookupByNationalId(dto.nationalId, user.role);
+  }
+
+  /**
+   * Preview of the next auto-allocated number, for pre-filling the create form.
+   * Declared before @Get(':id') — Nest matches in order, so ':id' would
+   * otherwise swallow 'next-number'.
+   */
+  @Get('next-number')
+  nextNumber() {
+    return this.employees.numberingPreview();
   }
 
   @Get(':id')

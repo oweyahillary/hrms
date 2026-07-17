@@ -33,9 +33,99 @@ export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-/** Remaining leave a balance can still spend. */
+/** Remaining leave a balance can still spend, ignoring carry-over expiry. */
 export function availableDays(accrued: number, carriedOver: number, used: number): number {
   return round2(accrued + carriedOver - used);
+}
+
+/* ------------------------------------------------------------------ *
+ * Carry-over and expiry
+ *
+ * ORDER OF CONSUMPTION: days taken are drawn from carried-over days FIRST,
+ * then from the current year's accrual. This is the only order that makes
+ * expiry meaningful — draw from accrual first and the carried days would always
+ * still be sitting there when they lapse, so nobody could ever use them. It is
+ * also the employee-friendly reading of use-it-or-lose-it.
+ * ------------------------------------------------------------------ */
+
+/** Carried-over days not yet spent. */
+export function carriedRemaining(carriedOver: number, used: number): number {
+  return round2(Math.max(0, carriedOver - used));
+}
+
+/** Days drawn from THIS year's accrual (i.e. spend beyond the carried pool). */
+export function accrualUsed(carriedOver: number, used: number): number {
+  return round2(Math.max(0, used - carriedOver));
+}
+
+/**
+ * The instant carried-over days lapse, for days carried INTO `year`.
+ *
+ * `expiryMonths` counts whole months from 1 January of that year, and the
+ * returned instant is exclusive: with 3, the days are usable through 31 March
+ * and gone on 1 April. null (never expires) returns null.
+ */
+export function carryOverExpiryAt(year: number, expiryMonths: number | null): Date | null {
+  if (expiryMonths == null) return null;
+  // Month overflow is intentional and correct: month 12 rolls to 1 Jan next year.
+  return new Date(Date.UTC(year, expiryMonths, 1));
+}
+
+/**
+ * The LAST DAY carried-over days can be used, as 'YYYY-MM-DD' — the day before
+ * the exclusive lapse instant. This is the date to show a human: "usable
+ * through 31 March", never the internal 1 April boundary.
+ */
+export function carryOverLastUsableDate(year: number, expiryMonths: number | null): string | null {
+  const at = carryOverExpiryAt(year, expiryMonths);
+  if (at == null) return null;
+  return toISODate(new Date(at.getTime() - 86_400_000));
+}
+
+/** Whether carried days for `year` have lapsed by `asOf`. */
+export function carryOverExpired(year: number, expiryMonths: number | null, asOf: Date): boolean {
+  const at = carryOverExpiryAt(year, expiryMonths);
+  return at != null && asOf.getTime() >= at.getTime();
+}
+
+/**
+ * Days available to spend at `asOf`, excluding carried days that have lapsed.
+ *
+ * Before expiry this equals availableDays(). After expiry the unspent carried
+ * days drop out, but days already SPENT from that pool stay spent — they don't
+ * come back and re-charge the current year's accrual.
+ */
+export function availableDaysAsOf(
+  accrued: number, carriedOver: number, used: number,
+  year: number, expiryMonths: number | null, asOf: Date,
+): number {
+  if (!carryOverExpired(year, expiryMonths, asOf)) {
+    return availableDays(accrued, carriedOver, used);
+  }
+  return round2(accrued - accrualUsed(carriedOver, used));
+}
+
+/** Carried days lost to expiry at `asOf` — 0 before the lapse date. */
+export function expiredCarryOverDays(
+  carriedOver: number, used: number,
+  year: number, expiryMonths: number | null, asOf: Date,
+): number {
+  if (!carryOverExpired(year, expiryMonths, asOf)) return 0;
+  return carriedRemaining(carriedOver, used);
+}
+
+/**
+ * Days that roll from one year into the next, given what's left at year end.
+ *
+ *   carryOverMax null -> unlimited
+ *   carryOverMax 0    -> nothing carries
+ *
+ * Never negative: an over-drawn balance carries 0, not a debt.
+ */
+export function carryOverForNextYear(remaining: number, carryOverMax: number | null): number {
+  const r = Math.max(0, remaining);
+  if (carryOverMax == null) return round2(r);
+  return round2(Math.min(r, Math.max(0, carryOverMax)));
 }
 
 /** How a leave type's annual entitlement becomes available over the year. */
