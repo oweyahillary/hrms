@@ -44,8 +44,9 @@ export function BrandMark({
       <Box
         w={tile} h={tile}
         style={{
-          borderRadius: size === 'lg' ? 11 : 8,
-          background: 'linear-gradient(135deg, var(--mantine-color-brand-8), var(--mantine-color-brand-6))',
+          borderRadius: size === 'lg' ? 13 : 10,
+          background: 'linear-gradient(135deg, var(--mantine-color-brand-7), var(--mantine-color-brand-5))',
+          boxShadow: '0 4px 12px -2px var(--mantine-color-brand-4)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           color: 'white', fontWeight: 700, fontSize: size === 'lg' ? 20 : 15,
           letterSpacing: '-0.02em', flexShrink: 0,

@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react';
 import { NavLink as RouterNavLink, useLocation } from 'react-router-dom';
 import {
-  AppShell, Box, Group, Menu, NavLink, ScrollArea, Text, UnstyledButton, Avatar,
+  AppShell, Box, Divider, Group, Menu, NavLink, ScrollArea, Text, UnstyledButton, Avatar,
 } from '@mantine/core';
 import {
   IconLayoutDashboard, IconUsers, IconCalendarStats, IconReportMoney, IconChevronDown, IconLogout,
@@ -48,7 +48,25 @@ const NAV: NavItem[] = [
       { to: '/leave/types', label: 'Leave types', hrOnly: true },
     ],
   },
-  { to: '/payroll', label: 'Payroll', icon: IconReportMoney },
+];
+
+/**
+ * Payroll is entirely HR_MANAGEMENT_ROLES-gated on the API — every route under
+ * it 403s for anyone else. Keep it out of the base NAV and show it only to
+ * roles that can actually use it, the same way ADMIN_NAV below hides Settings.
+ */
+const PAYROLL_NAV: NavItem[] = [
+  {
+    to: '/payroll',
+    label: 'Payroll',
+    icon: IconReportMoney,
+    children: [
+      // '/payroll' is both the section and the runs list, so it needs an exact
+      // match — same reasoning as '/leave' above.
+      { to: '/payroll', label: 'Runs', exact: true },
+      { to: '/payroll/preview', label: 'Preview calculator' },
+    ],
+  },
 ];
 
 /** Settings is organisation administration — only for roles that can manage it. */
@@ -70,22 +88,45 @@ export function AppShellLayout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const initials = (user?.email ?? '?').slice(0, 2).toUpperCase();
 
+  // Shared look for every nav row: a touch more breathing room than Mantine's
+  // default, and fully rounded so the brand-tinted "active" state (already
+  // wired up by `variant="light"` + Mantine's own active/aria-current CSS)
+  // reads as a pill rather than a boxed cell. Hover/active colour come from
+  // Mantine's built-in NavLink stylesheet, not from here — inline `style`
+  // objects can't express `:hover`/`[data-active]`, so that part lives in
+  // styles.css (`.nav-item`) instead.
+  const navItemStyles = {
+    root: { height: 40, paddingLeft: 12, paddingRight: 12 },
+    label: { fontSize: 'var(--mantine-font-size-sm)' },
+  };
+
   return (
     <AppShell
       layout="alt"
-      header={{ height: 60 }}
-      navbar={{ width: 248, breakpoint: 'sm' }}
+      header={{ height: 64 }}
+      navbar={{ width: 264, breakpoint: 'sm' }}
       padding="lg"
       styles={{
-        navbar: { background: 'var(--mantine-color-white)', borderColor: 'var(--mantine-color-sand-2)' },
-        header: { background: 'var(--mantine-color-white)', borderColor: 'var(--mantine-color-sand-2)' },
+        navbar: {
+          background: 'var(--mantine-color-white)',
+          borderRight: '1px solid var(--mantine-color-sand-2)',
+        },
+        header: {
+          background: 'var(--mantine-color-white)',
+          borderBottom: '1px solid var(--mantine-color-sand-2)',
+        },
         main: { background: 'var(--mantine-color-sand-0)' },
       }}
     >
       <AppShell.Navbar p="md">
-        <Box mb="lg" px="xs"><BrandMark name={user?.organizationName} /></Box>
+        <Box mb="md" px="xs" pt={4}><BrandMark name={user?.organizationName} /></Box>
+        <Divider color="sand.1" mb="md" />
         <ScrollArea>
-          {[...NAV, ...(canManageOrg(user?.role) ? ADMIN_NAV : [])].map((item) => {
+          {[
+            ...NAV,
+            ...(canManageEmployees(user?.role) ? PAYROLL_NAV : []),
+            ...(canManageOrg(user?.role) ? ADMIN_NAV : []),
+          ].map((item) => {
             const inSection = item.to === '/'
               ? location.pathname === '/'
               : location.pathname.startsWith(item.to);
@@ -95,8 +136,9 @@ export function AppShellLayout({ children }: { children: ReactNode }) {
                 <NavLink
                   key={item.to} component={RouterNavLink} to={item.to} label={item.label}
                   leftSection={<item.icon size={19} stroke={1.7} />} active={inSection}
-                  variant="light" mb={2}
-                  styles={{ root: { borderRadius: 8 } }}
+                  fw={inSection ? 600 : 500}
+                  variant="light" mb={4} className="nav-item"
+                  styles={navItemStyles}
                 />
               );
             }
@@ -110,8 +152,9 @@ export function AppShellLayout({ children }: { children: ReactNode }) {
                 key={item.to} label={item.label}
                 leftSection={<item.icon size={19} stroke={1.7} />}
                 defaultOpened={inSection}
-                variant="light" mb={2} childrenOffset={30}
-                styles={{ root: { borderRadius: 8 } }}
+                fw={inSection ? 600 : 500}
+                variant="light" mb={4} childrenOffset={28} className="nav-item"
+                styles={navItemStyles}
               >
                 {item.children
                   .filter((child) => !child.hrOnly || canManageEmployees(user?.role))
@@ -124,8 +167,8 @@ export function AppShellLayout({ children }: { children: ReactNode }) {
                       // as well would give two systems a vote and they can disagree —
                       // which is exactly how '/leave' stayed lit on '/leave/balances'.
                       end={child.exact}
-                      variant="light" mb={2}
-                      styles={{ root: { borderRadius: 8 } }}
+                      variant="light" mb={2} className="nav-item nav-item-child"
+                      styles={navItemStyles}
                     />
                   ))}
               </NavLink>
@@ -136,10 +179,14 @@ export function AppShellLayout({ children }: { children: ReactNode }) {
 
       <AppShell.Header>
         <Group h="100%" px="lg" justify="space-between">
-          <Text c="sand.6" size="sm">{titleFor(location.pathname)}</Text>
+          <Text c="sand.7" size="sm" fw={600}>{titleFor(location.pathname)}</Text>
           <Menu shadow="md" width={200} position="bottom-end">
             <Menu.Target>
-              <UnstyledButton>
+              <UnstyledButton
+                px="xs" py={6}
+                style={{ borderRadius: 'var(--mantine-radius-md)' }}
+                className="topbar-user"
+              >
                 <Group gap="xs">
                   <Avatar radius="xl" size={30} color="brand" variant="filled">{initials}</Avatar>
                   <Box visibleFrom="sm">

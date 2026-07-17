@@ -13,13 +13,13 @@ import { LeavePage } from './pages/LeavePage';
 import { LeaveApplyPage } from './pages/LeaveApplyPage';
 import { LeaveBalancesPage } from './pages/LeaveBalancesPage';
 import { LeaveTypesPage } from './pages/LeaveTypesPage';
+import { PayrollRunsPage } from './pages/PayrollRunsPage';
+import { PayrollRunCreatePage } from './pages/PayrollRunCreatePage';
+import { PayrollRunDetailPage } from './pages/PayrollRunDetailPage';
+import { PayrollPreviewPage } from './pages/PayrollPreviewPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { SettingsLeavePage } from './pages/SettingsLeavePage';
 import { SettingsNumberingPage } from './pages/SettingsNumberingPage';
-
-function Placeholder({ name }: { name: string }) {
-  return <div style={{ color: 'var(--mantine-color-sand-6)' }}>{name} — coming soon</div>;
-}
 
 export function App() {
   return (
@@ -42,7 +42,10 @@ export function App() {
                 <Route path="/leave/apply" element={<LeaveApplyPage />} />
                 <Route path="/leave/balances" element={<LeaveBalancesPage />} />
                 <Route path="/leave/types" element={<LeaveTypesPage />} />
-                <Route path="/payroll" element={<Placeholder name="Payroll" />} />
+                <Route path="/payroll" element={<PayrollRunsPage />} />
+                <Route path="/payroll/new" element={<PayrollRunCreatePage />} />
+                <Route path="/payroll/preview" element={<PayrollPreviewPage />} />
+                <Route path="/payroll/:id" element={<PayrollRunDetailPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/settings/leave" element={<SettingsLeavePage />} />
                 <Route path="/settings/numbering" element={<SettingsNumberingPage />} />

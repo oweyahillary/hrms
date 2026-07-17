@@ -197,7 +197,7 @@ export function LeaveApplyPage() {
   const typeOptions = types.map((t) => ({ value: t.id, label: t.name }));
 
   const summary = (
-    <Card p="md" radius="sm" withBorder bg="sand.0">
+    <Card p="md" radius="md" withBorder bg="sand.0">
       <Group justify="space-between" wrap="wrap" gap="xs">
         <Group gap="xs">
           <IconInfoCircle size={16} />

@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Alert, Anchor, Button, Card, Grid, Group, Select, Stack, Text, TextInput, Title,
+  Alert, Anchor, Button, Card, Grid, Group, Select, Stack, Text, TextInput, ThemeIcon, Title,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
-import { IconAlertTriangle, IconArrowLeft, IconCheck } from '@tabler/icons-react';
+import {
+  IconAlertTriangle, IconArrowLeft, IconBriefcase, IconBuildingBank, IconCheck, IconUser,
+  IconUsersGroup,
+} from '@tabler/icons-react';
+import type { Icon } from '@tabler/icons-react';
 import { createEmployee, getNextNumber, type CreateEmployeeInput } from '../api/employees';
 import { getDepartments, getJobTitles, type Option } from '../api/lookups';
 import { ApiError } from '../api/client';
@@ -15,6 +19,18 @@ import {
   KENYA_PHONE_REGEX, KRA_PIN_REGEX, NATIONAL_ID_REGEX, errors as msg,
   normalizeKraPin, normalizePhone,
 } from '../validation/kenya';
+
+/** Small icon + heading pairing shared by every form section card on this page. */
+function SectionTitle({ icon: SectionIcon, children }: { icon: Icon; children: React.ReactNode }) {
+  return (
+    <Group gap="xs" mb="md">
+      <ThemeIcon size={28} radius="md" variant="light" color="brand">
+        <SectionIcon size={16} stroke={1.7} />
+      </ThemeIcon>
+      <Title order={3}>{children}</Title>
+    </Group>
+  );
+}
 
 const EMPLOYMENT_TYPES: Option[] = [
   { value: 'PERMANENT', label: 'Permanent' },
@@ -224,7 +240,7 @@ export function EmployeeCreatePage() {
           )}
 
           <Card p="lg" radius="md">
-            <Title order={3} mb="md">Employment</Title>
+            <SectionTitle icon={IconBriefcase}>Employment</SectionTitle>
             <Grid gutter="md">
               <Grid.Col span={{ base: 12, sm: 6 }}>
                 <TextInput
@@ -265,7 +281,7 @@ export function EmployeeCreatePage() {
           </Card>
 
           <Card p="lg" radius="md">
-            <Title order={3} mb="md">Personal</Title>
+            <SectionTitle icon={IconUser}>Personal</SectionTitle>
             <Grid gutter="md">
               <Grid.Col span={{ base: 12, sm: 6 }}>
                 <TextInput label="First name" withAsterisk {...form.getInputProps('firstName')} />
@@ -292,8 +308,13 @@ export function EmployeeCreatePage() {
           </Card>
 
           <Card p="lg" radius="md">
-            <Title order={3}>Statutory &amp; bank</Title>
-            <Text size="sm" c="sand.6" mt={4} mb="md">
+            <Group gap="xs" mb={4}>
+              <ThemeIcon size={28} radius="md" variant="light" color="brand">
+                <IconBuildingBank size={16} stroke={1.7} />
+              </ThemeIcon>
+              <Title order={3}>Statutory &amp; bank</Title>
+            </Group>
+            <Text size="sm" c="sand.6" mb="md">
               National ID and KRA PIN are encrypted. Bank details are needed before this
               employee can appear on a bank export.
             </Text>
@@ -326,7 +347,7 @@ export function EmployeeCreatePage() {
           </Card>
 
           <Card p="lg" radius="md">
-            <Title order={3} mb="md">Next of kin</Title>
+            <SectionTitle icon={IconUsersGroup}>Next of kin</SectionTitle>
             <Grid gutter="md">
               <Grid.Col span={{ base: 12, sm: 4 }}>
                 <TextInput label="Name" {...form.getInputProps('kinName')} />

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActionIcon, Anchor, Badge, Button, Card, Center, Group, Pagination, Select, Skeleton, Stack,
-  Table, Text, TextInput, Title, UnstyledButton,
+  ActionIcon, Anchor, Avatar, Badge, Button, Card, Center, Group, Pagination, Select, Skeleton,
+  Stack, Table, Text, TextInput, Title, UnstyledButton,
 } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  IconArrowsSort, IconChevronUp, IconChevronDown, IconPlus, IconSearch, IconX,
+  IconArrowsSort, IconChevronUp, IconChevronDown, IconPlus, IconSearch, IconUsersGroup, IconX,
 } from '@tabler/icons-react';
 import {
   listEmployees, EMPLOYMENT_STATUSES,
@@ -50,6 +50,12 @@ function fmtDate(iso: string | null): string {
   return d.toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC',
   });
+}
+
+function initialsOf(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  return (parts[0][0] + (parts[parts.length - 1][0] ?? '')).toUpperCase();
 }
 
 function isSort(v: string | null): v is EmployeeSort {
@@ -230,19 +236,26 @@ export function EmployeesPage() {
         style={{ cursor: 'pointer' }}
       >
         <Table.Td>
-          <Anchor
-            component={Link}
-            to={`/employees/${r.id}`}
-            state={{ from: listUrl }}
-            size="sm"
-            fw={600}
-            c="inherit"
-            underline="never"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {r.fullName}
-          </Anchor>
-          {r.email && <Text size="xs" c="sand.6">{r.email}</Text>}
+          <Group gap="sm" wrap="nowrap">
+            <Avatar radius="xl" size={32} color="brand" variant="light">
+              {initialsOf(r.fullName)}
+            </Avatar>
+            <div>
+              <Anchor
+                component={Link}
+                to={`/employees/${r.id}`}
+                state={{ from: listUrl }}
+                size="sm"
+                fw={600}
+                c="inherit"
+                underline="never"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {r.fullName}
+              </Anchor>
+              {r.email && <Text size="xs" c="sand.6">{r.email}</Text>}
+            </div>
+          </Group>
         </Table.Td>
         <Table.Td>
           <Text size="sm" c="sand.7" ff="monospace">{r.employeeNumber}</Text>
@@ -366,7 +379,8 @@ export function EmployeesPage() {
             {!loading && rows.length === 0 && (
               <Center py={48}>
                 <Stack gap={6} align="center">
-                  <Text fw={600}>{filtered ? 'No matches' : 'No employees yet'}</Text>
+                  <IconUsersGroup size={30} stroke={1.5} color="var(--mantine-color-sand-4)" />
+                  <Text fw={600} mt={4}>{filtered ? 'No matches' : 'No employees yet'}</Text>
                   <Text size="sm" c="sand.6" maw={380} ta="center">
                     {filtered
                       ? 'Try a different name, or clear the filters to see everyone.'
