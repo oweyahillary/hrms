@@ -156,6 +156,10 @@ jobs:
           npx ts-node scripts/verify-leave-approvers.ts
           echo "::endgroup::"
 
+          echo "::group::verify leave-requests"
+          npx ts-node scripts/verify-leave-requests.ts
+          echo "::endgroup::"
+
           echo "::group::verify password-change"
           npx ts-node scripts/verify-password-change.ts
           echo "::endgroup::"
