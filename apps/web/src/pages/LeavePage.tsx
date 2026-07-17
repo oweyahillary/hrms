@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Badge, Button, Card, Center, Group, Select, Skeleton, Stack, Table, Tabs, Text, Title,
+  Avatar, Badge, Button, Card, Center, Group, Select, Skeleton, Stack, Table, Tabs, Text, Title,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconCheck, IconInbox, IconList, IconPlus, IconX } from '@tabler/icons-react';
+import {
+  IconCalendarStats, IconCheck, IconInboxOff, IconInbox, IconList, IconPlus, IconX,
+} from '@tabler/icons-react';
 import {
   approveLeave, leaveInbox, listLeaveRequests, rejectLeave,
   LEAVE_STATUSES, type LeaveRequest,
@@ -62,8 +64,15 @@ function RequestRows({
       {rows.map((r) => (
         <Table.Tr key={r.id}>
           <Table.Td>
-            <Text size="sm" fw={600}>{r.employeeName ?? 'Unknown'}</Text>
-            {r.employeeNumber && <Text size="xs" c="sand.6" ff="monospace">{r.employeeNumber}</Text>}
+            <Group gap="sm" wrap="nowrap">
+              <Avatar radius="xl" size={28} color="brand" variant="light">
+                {(r.employeeName ?? '?').trim().charAt(0).toUpperCase()}
+              </Avatar>
+              <div>
+                <Text size="sm" fw={600}>{r.employeeName ?? 'Unknown'}</Text>
+                {r.employeeNumber && <Text size="xs" c="sand.6" ff="monospace">{r.employeeNumber}</Text>}
+              </div>
+            </Group>
           </Table.Td>
           <Table.Td visibleFrom="sm"><Text size="sm">{r.leaveTypeName ?? '—'}</Text></Table.Td>
           <Table.Td>
@@ -244,7 +253,10 @@ export function LeavePage() {
             {!loading && rows.length === 0 && (
               <Center py={48}>
                 <Stack gap={6} align="center">
-                  <Text fw={600}>{tab === 'inbox' ? 'Nothing waiting on you' : 'No requests'}</Text>
+                  {tab === 'inbox'
+                    ? <IconInboxOff size={30} stroke={1.5} color="var(--mantine-color-sand-4)" />
+                    : <IconCalendarStats size={30} stroke={1.5} color="var(--mantine-color-sand-4)" />}
+                  <Text fw={600} mt={4}>{tab === 'inbox' ? 'Nothing waiting on you' : 'No requests'}</Text>
                   <Text size="sm" c="sand.6" maw={380} ta="center">
                     {tab === 'inbox'
                       ? 'Leave requests that need your approval will appear here.'

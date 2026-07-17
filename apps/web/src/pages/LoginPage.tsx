@@ -69,24 +69,36 @@ export function LoginPage() {
   }
 
   return (
-    <Center mih="100vh" p="md" bg="sand.0">
-      <Stack w={400} maw="100%" gap="lg">
-        <Paper p="xl" radius="md">
-          <Center mb="lg">
+    <Center
+      mih="100vh" p="md"
+      style={{
+        background: `
+          radial-gradient(560px circle at 18% 12%, var(--mantine-color-brand-1) 0%, transparent 60%),
+          radial-gradient(480px circle at 85% 88%, var(--mantine-color-brand-0) 0%, transparent 55%),
+          var(--mantine-color-sand-0)
+        `,
+      }}
+    >
+      <Stack w={420} maw="100%" gap="lg">
+        <Paper p={40} radius="lg" shadow="lg">
+          <Center mb="xl">
             <BrandMark size="lg" />
           </Center>
 
           {!mfaToken ? (
             <form onSubmit={form.onSubmit(submitCredentials)}>
               <Stack gap="md">
-                <Text c="sand.6" size="sm" ta="center">Sign in to your workspace</Text>
+                <Box ta="center" mb={4}>
+                  <Title order={3}>Welcome back</Title>
+                  <Text c="sand.6" size="sm" mt={4}>Sign in to your workspace</Text>
+                </Box>
                 <TextInput
                   label="Email" placeholder="you@company.co.ke" autoComplete="username"
-                  {...form.getInputProps('email')}
+                  size="md" {...form.getInputProps('email')}
                 />
                 <PasswordInput
                   label="Password" placeholder="Your password" autoComplete="current-password"
-                  {...form.getInputProps('password')}
+                  size="md" {...form.getInputProps('password')}
                 />
                 {error && <Text c="red.7" size="sm">{error}</Text>}
                 <Button type="submit" loading={busy} fullWidth size="md" mt="xs">Sign in</Button>

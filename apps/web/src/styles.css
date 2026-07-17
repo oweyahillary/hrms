@@ -8,3 +8,65 @@ body {
   text-rendering: optimizeLegibility;
 }
 a { color: inherit; text-decoration: none; }
+
+/* Snappy, consistent motion on every interactive surface — buttons, nav
+   links, table rows, cards. One rule instead of repeating transitions on
+   every component keeps the feel identical everywhere. */
+button, a, [data-hoverable], .mantine-NavLink-root, .mantine-Table-tr {
+  transition: background-color 120ms ease, border-color 120ms ease,
+    box-shadow 120ms ease, color 120ms ease, transform 120ms ease;
+}
+
+/* Table headers: quiet caption-style labels rather than heavy bordered
+   cells — the modern-SaaS convention, and it applies to every table
+   (Employees, Leave, Balances, Leave types) without touching each page. */
+.mantine-Table-thead .mantine-Table-th {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mantine-color-sand-6);
+  padding-top: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--mantine-color-sand-2);
+}
+.mantine-Table-tbody .mantine-Table-tr .mantine-Table-td {
+  border-bottom: 1px solid var(--mantine-color-sand-1);
+}
+.mantine-Table-tbody .mantine-Table-tr:last-of-type .mantine-Table-td {
+  border-bottom: none;
+}
+
+/* A visible, brand-coloured focus ring for keyboard users — Mantine leaves
+   this to the browser default otherwise, which is inconsistent across
+   inputs, links and buttons. */
+:focus-visible {
+  outline: 2px solid var(--mantine-color-brand-5);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--mantine-color-brand-2);
+  color: var(--mantine-color-brand-9);
+}
+
+/* Sidebar nav rows: rounded pill shape, and a warm hover tint for whichever
+   row ISN'T already the brand-tinted active one (Mantine owns that state via
+   the `active` prop / `[aria-current="page"]` — this only adds the resting
+   hover, so the two never fight for the same pixel). */
+.nav-item {
+  border-radius: var(--mantine-radius-md);
+}
+.nav-item:not([data-active]):not([aria-current='page']):hover {
+  background-color: var(--mantine-color-sand-1);
+}
+.nav-item-child[aria-current='page'] {
+  font-weight: 600;
+}
+
+.topbar-user {
+  cursor: pointer;
+}
+.topbar-user:hover {
+  background-color: var(--mantine-color-sand-1);
+}

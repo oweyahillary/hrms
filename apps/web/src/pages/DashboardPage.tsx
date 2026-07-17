@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import {
-  Badge, Card, Grid, Group, Skeleton, Stack, Text, Title,
+  Badge, Box, Card, Grid, Group, Skeleton, Stack, Text, Title, ThemeIcon,
 } from '@mantine/core';
-import { IconArrowUpRight, IconArrowDownRight } from '@tabler/icons-react';
+import {
+  IconArrowUpRight, IconArrowDownRight, IconCoin, IconUsers, IconBeach, IconClockHour4,
+  IconSparkles,
+} from '@tabler/icons-react';
 import { getYearTrend, getHeadcount, getLeaveInboxCount, type TrendMonth } from '../api/reports';
 
 const MONTHS = [
@@ -84,9 +87,9 @@ export function DashboardPage() {
   }, []);
 
   const stats = [
-    { label: 'Headcount', value: data ? String(data.active) : '—' },
-    { label: 'On leave', value: data ? String(data.onLeave) : '—' },
-    { label: 'Pending approvals', value: data ? String(data.pending) : '—' },
+    { label: 'Headcount', value: data ? String(data.active) : '—', icon: IconUsers, color: 'brand' },
+    { label: 'On leave', value: data ? String(data.onLeave) : '—', icon: IconBeach, color: 'amber' },
+    { label: 'Pending approvals', value: data ? String(data.pending) : '—', icon: IconClockHour4, color: 'amber' },
   ];
 
   return (
@@ -105,10 +108,18 @@ export function DashboardPage() {
       <Grid gutter="md">
         <Grid.Col span={{ base: 12, md: 7 }}>
           <Card p="lg" radius="md" h="100%">
-            <Group justify="space-between" align="baseline" mb={2}>
-              <Text size="sm" c="sand.6">
-                Payroll — {data ? `${MONTHS[data.shownMonth - 1]} ${data.shownYear}` : '—'}
-              </Text>
+            <Group justify="space-between" align="flex-start" mb={4}>
+              <Group gap="sm" align="center">
+                <ThemeIcon size={38} radius="md" variant="light" color="brand">
+                  <IconCoin size={20} stroke={1.7} />
+                </ThemeIcon>
+                <div>
+                  <Text size="sm" c="sand.6" fw={500}>Payroll</Text>
+                  <Text size="xs" c="sand.5">
+                    {data ? `${MONTHS[data.shownMonth - 1]} ${data.shownYear}` : '—'}
+                  </Text>
+                </div>
+              </Group>
               {!loading && data?.pctChange != null && (
                 <Badge
                   variant="light" size="sm"
@@ -122,7 +133,7 @@ export function DashboardPage() {
 
             {loading
               ? <Skeleton h={38} w={220} my="xs" radius="sm" />
-              : <Text fz={34} fw={700} mt={4} mb="md">{fmtKES(data?.grossPay ?? 0)}</Text>}
+              : <Text fz={34} fw={700} mt="md" mb="md">{fmtKES(data?.grossPay ?? 0)}</Text>}
 
             {loading
               ? <Skeleton h={56} radius="sm" />
@@ -134,8 +145,13 @@ export function DashboardPage() {
           <Stack gap="md" h="100%">
             {stats.map((s) => (
               <Card key={s.label} p="md" radius="md" style={{ flex: 1 }}>
-                <Group justify="space-between" align="center" h="100%">
-                  <Text size="sm" c="sand.6">{s.label}</Text>
+                <Group justify="space-between" align="center" h="100%" wrap="nowrap">
+                  <Group gap="sm" wrap="nowrap">
+                    <ThemeIcon size={38} radius="md" variant="light" color={s.color}>
+                      <s.icon size={19} stroke={1.7} />
+                    </ThemeIcon>
+                    <Text size="sm" c="sand.6" fw={500}>{s.label}</Text>
+                  </Group>
                   {loading
                     ? <Skeleton h={26} w={40} radius="sm" />
                     : <Text fz={24} fw={700}>{s.value}</Text>}
@@ -147,11 +163,18 @@ export function DashboardPage() {
       </Grid>
 
       <Card p="xl" radius="md">
-        <Title order={3}>Welcome</Title>
-        <Text c="sand.6" mt="xs" maw={620}>
-          These figures come from your finalized payroll and staffing records. Quick actions
-          and deeper reports will land here as we build out each section.
-        </Text>
+        <Group gap="md" align="flex-start" wrap="nowrap">
+          <ThemeIcon size={42} radius="md" variant="light" color="brand" style={{ flexShrink: 0 }}>
+            <IconSparkles size={22} stroke={1.7} />
+          </ThemeIcon>
+          <Box>
+            <Title order={3}>Welcome</Title>
+            <Text c="sand.6" mt={6} maw={620}>
+              These figures come from your finalized payroll and staffing records. Quick actions
+              and deeper reports will land here as we build out each section.
+            </Text>
+          </Box>
+        </Group>
       </Card>
     </Stack>
   );

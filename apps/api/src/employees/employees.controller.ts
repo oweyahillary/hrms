@@ -8,6 +8,7 @@ import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { TerminateEmployeeDto } from './dto/terminate-employee.dto';
 import { ListEmployeesDto } from './dto/list-employees.dto';
 import { LookupEmployeeDto } from './dto/lookup-employee.dto';
+import { CreateLoginDto } from './dto/create-login.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.decorator';
 import { PII_PRIVILEGED_ROLES } from './employee-pii';
@@ -72,5 +73,12 @@ export class EmployeesController {
   @Roles('Admin')
   anonymize(@Param('id') id: string) {
     return this.employees.anonymize(id);
+  }
+
+  // Granting 'Admin' is further restricted to Admin actors inside the service.
+  @Post(':id/create-login')
+  @Roles(...MANAGE)
+  createLogin(@Param('id') id: string, @Body() dto: CreateLoginDto, @CurrentUser() user: AuthUser) {
+    return this.employees.createLogin(id, dto, user.role);
   }
 }

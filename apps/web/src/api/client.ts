@@ -70,3 +70,55 @@ export async function api<T = unknown>(path: string, init: RequestInit = {}): Pr
   }
   return body as T;
 }
+
+/**
+ * Download a binary response (PDF/CSV/XLSX) and save it via the browser's
+ * normal download UI. There's no JSON body to decode here, so this doesn't
+ * reuse `api()` — but it shares the same auth-header + single-retry-on-401
+ * shape as `raw()`/`tryRefresh()` above.
+ *
+ * The filename is taken from the server's `Content-Disposition` header when
+ * present (every payroll download endpoint sets one); `fallbackFilename` is
+ * only a safety net.
+ */
+export async function downloadFile(path: string, fallbackFilename: string): Promise<void> {
+  let res = await raw(path, {});
+
+  if (res.status === 401 && accessToken !== null) {
+    if (await tryRefresh()) {
+      res = await raw(path, {});
+    } else {
+      setAccessToken(null);
+      setRefreshToken(null);
+      onAuthLost?.();
+    }
+  }
+
+  if (!res.ok) {
+    let message = res.statusText;
+    const text = await res.text();
+    if (text) {
+      try {
+        const body = JSON.parse(text) as { message?: string | string[] };
+        if (body.message) message = Array.isArray(body.message) ? body.message.join(', ') : body.message;
+      } catch {
+        // Not JSON — fall back to statusText.
+      }
+    }
+    throw new ApiError(res.status, message);
+  }
+
+  const disposition = res.headers.get('Content-Disposition') ?? '';
+  const match = /filename="?([^";]+)"?/i.exec(disposition);
+  const filename = match?.[1] ?? fallbackFilename;
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

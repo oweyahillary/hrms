@@ -39,3 +39,6 @@ apps/api/salary.xlsx
 
 # --- local scratch space for test artifacts (downloads, generated samples) ---
 .scratch/
+
+# --- local-only design/handover docs, not part of the shipped repo ---
+dev_docs/

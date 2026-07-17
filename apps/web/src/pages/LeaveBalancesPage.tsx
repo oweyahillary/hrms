@@ -5,7 +5,9 @@ import {
   Table, Text, TextInput, Title,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconAlertTriangle, IconArrowLeft, IconCheck, IconPlayerPlay } from '@tabler/icons-react';
+import {
+  IconAlertTriangle, IconArrowLeft, IconCheck, IconPlayerPlay, IconUserSearch, IconWallet,
+} from '@tabler/icons-react';
 import {
   getLeaveBalances, getLeaveTypes, runAccrual, upsertLeaveBalance,
   type LeaveBalance, type LeaveType,
@@ -183,7 +185,10 @@ export function LeaveBalancesPage() {
 
         {!employeeId ? (
           <Center py={48}>
-            <Text size="sm" c="sand.6">Choose an employee to see their balances.</Text>
+            <Stack gap={6} align="center">
+              <IconUserSearch size={30} stroke={1.5} color="var(--mantine-color-sand-4)" />
+              <Text size="sm" c="sand.6" mt={4}>Choose an employee to see their balances.</Text>
+            </Stack>
           </Center>
         ) : (
           <>
@@ -240,7 +245,8 @@ export function LeaveBalancesPage() {
             {!loading && rows?.length === 0 && (
               <Center py={40}>
                 <Stack gap={6} align="center">
-                  <Text fw={600}>No balances for {year}</Text>
+                  <IconWallet size={30} stroke={1.5} color="var(--mantine-color-sand-4)" />
+                  <Text fw={600} mt={4}>No balances for {year}</Text>
                   <Text size="sm" c="sand.6" maw={430} ta="center">
                     This person has nothing to book against yet. Run accrual to grant what they&apos;ve
                     earned, or set a balance by hand.

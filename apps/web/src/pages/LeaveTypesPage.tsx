@@ -6,7 +6,7 @@ import {
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
-import { IconArrowLeft, IconCheck, IconPlus } from '@tabler/icons-react';
+import { IconArrowLeft, IconCalendarTime, IconCheck, IconPlus } from '@tabler/icons-react';
 import {
   createLeaveType, getLeaveTypes, updateLeaveType, type LeaveType,
 } from '../api/leave';
@@ -201,7 +201,8 @@ export function LeaveTypesPage() {
         {!loading && types.length === 0 && (
           <Center py={48}>
             <Stack gap={6} align="center">
-              <Text fw={600}>No leave types yet</Text>
+              <IconCalendarTime size={30} stroke={1.5} color="var(--mantine-color-sand-4)" />
+              <Text fw={600} mt={4}>No leave types yet</Text>
               <Text size="sm" c="sand.6" maw={400} ta="center">
                 Kenyan law gives 21 working days of annual leave. Add that first.
               </Text>
@@ -236,7 +237,7 @@ export function LeaveTypesPage() {
               />
             )}
 
-            <Card p="md" radius="sm" withBorder bg="sand.0">
+            <Card p="md" radius="md" withBorder bg="sand.0">
               <Text size="sm" fw={600} mb="xs">Carry-over</Text>
               <Stack gap="sm">
                 <Switch
