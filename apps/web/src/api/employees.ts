@@ -78,6 +78,30 @@ export interface EmployeeDetail {
   createdAt: string;
   updatedAt: string;
   piiMasked: boolean;
+  /** null until a login has been provisioned via createEmployeeLogin. */
+  login: EmployeeLogin | null;
+}
+
+export interface EmployeeLogin {
+  email: string;
+  role: string;
+  isActive: boolean;
+}
+
+/** Mirrors GRANTABLE_ROLE_NAMES on the API. Granting 'Admin' is refused server-side to non-Admin actors. */
+export const GRANTABLE_ROLE_NAMES = ['Admin', 'HR Manager', 'HR Officer', 'Manager', 'Employee'] as const;
+export type GrantableRoleName = (typeof GRANTABLE_ROLE_NAMES)[number];
+
+export interface CreateLoginInput {
+  email: string;
+  roleName: GrantableRoleName;
+}
+
+/** The temporary password is returned ONCE — the API never stores or re-exposes it. */
+export interface CreateLoginResult {
+  email: string;
+  temporaryPassword: string;
+  role: string;
 }
 
 /**
@@ -159,6 +183,9 @@ export const createEmployee = (input: CreateEmployeeInput): Promise<EmployeeDeta
 
 export const getEmployee = (id: string): Promise<EmployeeDetail> =>
   api<EmployeeDetail>(`/employees/${id}`);
+
+export const createEmployeeLogin = (id: string, input: CreateLoginInput): Promise<CreateLoginResult> =>
+  api<CreateLoginResult>(`/employees/${id}/create-login`, { method: 'POST', body: JSON.stringify(input) });
 
 export function listEmployees(params: ListEmployeesParams): Promise<EmployeeListResponse> {
   const qs = new URLSearchParams();

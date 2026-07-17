@@ -32,6 +32,12 @@ export class PasswordService {
     return `scrypt$${this.N}$${this.r}$${this.p}$${salt.toString('base64')}$${derived.toString('base64')}`;
   }
 
+  /** A one-time credential for a freshly-provisioned login (e.g. an employee's
+   * first account). Returned to the caller once — never persisted in plaintext. */
+  generateTempPassword(): string {
+    return randomBytes(12).toString('base64url'); // 16 chars, ~96 bits
+  }
+
   async verify(password: string, stored: string): Promise<boolean> {
     const parts = stored.split('$');
     if (parts.length !== 6 || parts[0] !== 'scrypt') return false;

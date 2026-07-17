@@ -1,10 +1,11 @@
 import {
-  BadRequestException, ConflictException, Inject, Injectable, NotFoundException,
+  BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PRISMA, type ExtendedPrismaClient } from '../prisma/prisma.service';
 import { Prisma } from '../generated/prisma/client';
 import { CryptoService } from '../crypto/crypto.service';
+import { PasswordService } from '../auth/password.service';
 import { isPiiPrivileged, presentPii } from './employee-pii';
 import { EMPLOYEE_ANON_MARKER } from './anonymization';
 import { formatEmployeeNumber } from './employee-number';
@@ -13,6 +14,7 @@ import type { CreateEmployeeDto } from './dto/create-employee.dto';
 import type { UpdateEmployeeDto } from './dto/update-employee.dto';
 import type { TerminateEmployeeDto } from './dto/terminate-employee.dto';
 import type { EmployeeSortField, ListEmployeesDto } from './dto/list-employees.dto';
+import type { CreateLoginDto } from './dto/create-login.dto';
 
 /**
  * Columns the list view needs. Deliberately EXCLUDES the encrypted columns
@@ -60,6 +62,7 @@ interface EmployeeRow {
   employmentType: string; employmentStatus: string;
   hireDate: Date; exitDate: Date | null; nextOfKin: unknown;
   createdAt: Date; updatedAt: Date;
+  user?: { email: string; isActive: boolean; role: { name: string } } | null;
 }
 
 @Injectable()
@@ -67,6 +70,7 @@ export class EmployeesService {
   constructor(
     @Inject(PRISMA) private readonly prisma: ExtendedPrismaClient,
     private readonly crypto: CryptoService,
+    private readonly passwords: PasswordService,
   ) {}
 
   /**
@@ -219,9 +223,63 @@ export class EmployeesService {
 
   async get(id: string, actorRole: string) {
     // findFirst (not findUnique) so the tenant extension scopes by org.
-    const row = (await this.prisma.employee.findFirst({ where: { id } })) as unknown as EmployeeRow | null;
+    const row = (await this.prisma.employee.findFirst({
+      where: { id },
+      include: { user: { select: { email: true, isActive: true, role: { select: { name: true } } } } },
+    })) as unknown as EmployeeRow | null;
     if (!row) throw new NotFoundException('Employee not found');
     return this.toResponse(row, actorRole);
+  }
+
+  /**
+   * Provision a login for an existing employee. Granting the 'Admin' role is
+   * restricted to Admin actors — everything else in HR_MANAGEMENT_ROLES can
+   * hand out the rest. Roles are resolved-or-created by name because only
+   * 'Admin' is ever actually seeded (see apps/api/scripts/seed.ts) — the same
+   * pattern seed.ts itself uses.
+   *
+   * There is no email infrastructure in this app: the temporary password is
+   * returned once in the response body, the same precedent as MFA backup
+   * codes (AuthService.enableMfa). It cannot be retrieved again — only reset.
+   */
+  async createLogin(employeeId: string, dto: CreateLoginDto, actorRole: string) {
+    if (dto.roleName === 'Admin' && actorRole !== 'Admin') {
+      throw new ForbiddenException('Only an Admin can grant the Admin role');
+    }
+
+    // findFirst (not findUnique) so the tenant extension scopes by org.
+    const employee = await this.prisma.employee.findFirst({ where: { id: employeeId } });
+    if (!employee) throw new NotFoundException('Employee not found');
+
+    let role = (await this.prisma.role.findFirst({
+      where: { name: dto.roleName },
+    })) as unknown as { id: string } | null;
+    role ??= (await this.prisma.role.create({
+      data: { name: dto.roleName, permissions: dto.roleName === 'Admin' ? { all: true } : {} } as never,
+    })) as unknown as { id: string };
+
+    const temporaryPassword = this.passwords.generateTempPassword();
+    const passwordHash = await this.passwords.hash(temporaryPassword);
+    try {
+      await this.prisma.user.create({
+        data: {
+          email: dto.email, passwordHash, mustChangePassword: true, roleId: role.id, employeeId,
+        } as never,
+      });
+    } catch (err) {
+      // Prisma 7's driver adapter (no Rust query engine) reports the failing
+      // columns in the message text, not a structured meta.target array —
+      // confirmed against a live P2002 (see the two unique constraints on User:
+      // employeeId, and [organizationId, email]).
+      const { code, message } = err as { code?: string; message?: string };
+      if (code === 'P2002') {
+        if (message?.includes('employeeId')) throw new ConflictException('This employee already has a login');
+        if (message?.includes('email')) throw new ConflictException('That email is already in use');
+      }
+      throw err;
+    }
+
+    return { email: dto.email, temporaryPassword, role: dto.roleName };
   }
 
   /** Find an employee by raw national ID using the blind index (no plaintext scan). */
@@ -389,6 +447,7 @@ export class EmployeesService {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       piiMasked: !privileged,
+      login: row.user ? { email: row.user.email, role: row.user.role.name, isActive: row.user.isActive } : null,
     };
   }
 }
