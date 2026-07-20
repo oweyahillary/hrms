@@ -5,6 +5,7 @@ import { ALLOWED_LOGO_MIME, MAX_LOGO_BYTES, contentTypeFromName } from '../stora
 import type { UpdateBrandingDto } from './dto/update-branding.dto';
 import type { UpdateNumberingDto } from './dto/update-numbering.dto';
 import type { UpdateLeaveApprovalDto } from './dto/update-leave-approval.dto';
+import type { UpdatePayrollSettingsDto } from './dto/update-payroll-settings.dto';
 import { formatEmployeeNumber } from '../employees/employee-number';
 import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
 
@@ -161,6 +162,22 @@ export class OrganizationService {
     if (dto.employeeNumberNextSeq !== undefined) data.employeeNumberNextSeq = dto.employeeNumberNextSeq;
     await this.prisma.organization.update({ where: { id: orgId }, data });
     return this.getNumbering(orgId);
+  }
+
+  async getPayrollSettings(orgId: string) {
+    const org = (await this.prisma.organization.findFirst({
+      where: { id: orgId },
+      select: { severanceDayRateBasis: true },
+    })) as unknown as { severanceDayRateBasis: string } | null;
+    if (!org) throw new NotFoundException('Organization not found');
+    return { severanceDayRateBasis: org.severanceDayRateBasis };
+  }
+
+  async updatePayrollSettings(orgId: string, dto: UpdatePayrollSettingsDto) {
+    const data: Record<string, unknown> = {};
+    if (dto.severanceDayRateBasis !== undefined) data.severanceDayRateBasis = dto.severanceDayRateBasis;
+    await this.prisma.organization.update({ where: { id: orgId }, data });
+    return this.getPayrollSettings(orgId);
   }
 
   async getBranding(orgId: string) {

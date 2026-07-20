@@ -42,3 +42,5 @@ apps/api/salary.xlsx
 
 # --- local-only design/handover docs, not part of the shipped repo ---
 dev_docs/
+.claude/settings.local.json
+.vscode/

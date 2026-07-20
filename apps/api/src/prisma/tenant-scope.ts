@@ -9,14 +9,15 @@
  * schema.prisma. Deliberately EXCLUDED:
  *   Organization (it IS the tenant), StatutoryRate (national/global),
  *   Session (via userId), SalaryComponent (via SalaryStructure),
- *   LeaveApprovalStep (via LeaveRequest), Payslip / BankExportBatch (via PayrollRun).
+ *   LeaveApprovalStep (via LeaveRequest), Payslip / BankExportBatch (via PayrollRun),
+ *   LoanRepayment (via Loan).
  */
 export const TENANT_SCOPED_MODELS: ReadonlySet<string> = new Set([
   'User', 'Role', 'AuditLog', 'Department', 'JobTitle', 'Employee',
   'EmployeeDocument', 'PublicHoliday', 'AttendanceRecord', 'LeaveType',
   'LeaveBalance', 'LeaveRequest', 'SalaryStructure', 'PayrollRun',
   'ConsentRecord', 'DataSubjectRequest', 'RetentionPolicy', 'BreachIncident',
-  'SeveranceCalculation',
+  'SeveranceCalculation', 'Loan', 'PayrollAdjustment',
 ]);
 
 export const WHERE_INJECTABLE: ReadonlySet<string> = new Set([

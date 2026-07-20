@@ -37,6 +37,15 @@ export interface Payslip {
   /** A looser, gross-based version of the same test — informational only. */
   grossBasedOneThirdPass: boolean;
   pdfStatus: PdfStatus;
+  /**
+   * Itemized breakdown of otherDeductions attributable to loan/advance installments.
+   * `amount` is what was deducted; `scheduledAmount` is what the installment
+   * schedule wanted; `deferredAmount` (= scheduled - amount) is how much the
+   * one-third floor held back, carried forward in the loan balance.
+   */
+  loanRepayments: Array<{ loanId: string; amount: number; scheduledAmount: number; deferredAmount: number }>;
+  /** One-off bonuses/deductions this run consumed for this employee. */
+  adjustments: Array<{ id: string; type: 'BONUS' | 'DEDUCTION'; amount: number; reason: string | null }>;
 }
 
 /** An employee who was targeted but had no effective salary structure for the period. */
@@ -60,6 +69,11 @@ export interface PayrollRunDetail extends PayrollRunListItem {
   pdfStatus: { ready: number; total: number };
   totals: PayrollTotals;
   payslips: Payslip[];
+  /**
+   * One-off deductions the one-third floor withheld this run — kept PENDING for
+   * the officer to re-target or carry forward, not silently dropped.
+   */
+  deferredDeductions: Array<{ id: string; employeeId: string; amount: number; reason: string | null }>;
   /** Only present on the response to the create/correction call that produced this run. */
   skipped?: SkippedEmployee[];
 }

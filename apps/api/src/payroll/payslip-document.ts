@@ -16,13 +16,17 @@ export interface PayslipDocumentData {
   };
   employee: { fullName: string; employeeNumber: string; kraPin?: string | null };
   period: { month: number; year: number; runType: string };
-  earnings: { grossPay: number };
+  earnings: { grossPay: number; lines?: { label: string; amount: number }[] };
   deductions: {
     paye: number;
     nssfEmployee: number;
     shif: number;
     ahlEmployee: number;
     otherDeductions: number;
+    /** Itemized breakdown of otherDeductions (loan repayments, one-off deductions,
+     *  salary-structure voluntary deductions). Omitted for payslips predating this
+     *  breakdown — falls back to a single "Other deductions" line. */
+    otherDeductionLines?: { label: string; amount: number }[];
   };
   employerContributions: { nssfEmployer: number; ahlEmployer: number };
   netPay: number;
@@ -137,6 +141,15 @@ export function renderPayslipPdf(data: PayslipDocumentData): Promise<Buffer> {
 
   // Earnings
   header('EARNINGS');
+  const earningsLines = data.earnings.lines ?? [];
+  if (earningsLines.length) {
+    const base = earningsLines.reduce((acc, l) => acc - l.amount, data.earnings.grossPay);
+    row('Basic + allowances', money(base));
+    for (const line of earningsLines) row(line.label, money(line.amount));
+    doc.y += 2;
+    rule(doc.y);
+    doc.y += 4;
+  }
   row('Gross Pay', money(data.earnings.grossPay), { bold: true });
   doc.y += 4;
   rule(doc.y);
@@ -148,7 +161,11 @@ export function renderPayslipPdf(data: PayslipDocumentData): Promise<Buffer> {
   row('NSSF (employee)', money(data.deductions.nssfEmployee));
   row('SHIF', money(data.deductions.shif));
   row('Affordable Housing Levy (employee)', money(data.deductions.ahlEmployee));
-  if (Number(data.deductions.otherDeductions) > 0) {
+  if (data.deductions.otherDeductionLines?.length) {
+    for (const line of data.deductions.otherDeductionLines) {
+      row(line.label, money(line.amount));
+    }
+  } else if (Number(data.deductions.otherDeductions) > 0) {
     row('Other deductions', money(data.deductions.otherDeductions));
   }
   const totalDed =

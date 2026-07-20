@@ -20,6 +20,7 @@ import { PayrollPreviewPage } from './pages/PayrollPreviewPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { SettingsLeavePage } from './pages/SettingsLeavePage';
 import { SettingsNumberingPage } from './pages/SettingsNumberingPage';
+import { SettingsPayrollPage } from './pages/SettingsPayrollPage';
 
 export function App() {
   return (
@@ -49,6 +50,7 @@ export function App() {
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/settings/leave" element={<SettingsLeavePage />} />
                 <Route path="/settings/numbering" element={<SettingsNumberingPage />} />
+                <Route path="/settings/payroll" element={<SettingsPayrollPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </AppShellLayout>

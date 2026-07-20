@@ -76,6 +76,19 @@ function StatTile({ label, value, icon: TileIcon, color }: { label: string; valu
   );
 }
 
+/** Underlines a figure with a tooltip breakdown when it's made up of more than one line item. */
+function BreakdownText({ value, lines }: { value: string; lines: string[] }) {
+  if (!lines.length) return <Text size="sm">{value}</Text>;
+  return (
+    <Tooltip
+      withArrow multiline w={260}
+      label={<Stack gap={2}>{lines.map((l, i) => <Text key={i} size="xs">{l}</Text>)}</Stack>}
+    >
+      <Text size="sm" style={{ textDecoration: 'underline dotted', cursor: 'help' }}>{value}</Text>
+    </Tooltip>
+  );
+}
+
 const PDF_STATUS_COLOR: Record<string, string> = { PENDING: 'sand', READY: 'brand', FAILED: 'red' };
 
 function PdfCell({
@@ -366,6 +379,14 @@ export function PayrollRunDetailPage() {
   const hasFailures = run.oneThirdFailureEmployeeIds.length > 0;
   const pdfsOutstanding = run.pdfStatus.total - run.pdfStatus.ready;
 
+  // Loan installments this run reduced/withheld to protect the one-third floor.
+  const throttledRepayments = run.payslips
+    .flatMap((p) => p.loanRepayments.filter((r) => r.deferredAmount > 0).map((r) => ({ employeeId: p.employeeId, ...r })));
+  const deferredDeductions = run.deferredDeductions ?? [];
+  const hasThrottle = throttledRepayments.length > 0 || deferredDeductions.length > 0;
+  const carriedForwardTotal = throttledRepayments.reduce((s, r) => s + r.deferredAmount, 0)
+    + deferredDeductions.reduce((s, d) => s + d.amount, 0);
+
   return (
     <Stack gap="lg">
       {back}
@@ -423,6 +444,34 @@ export function PayrollRunDetailPage() {
         <Alert color="red" variant="light" icon={<IconAlertTriangle size={16} />} title="One-third rule breach">
           {run.oneThirdFailureEmployeeIds.length} payslip(s) have take-home pay below one-third of basic
           salary. You can still finalize, but you will be asked to confirm.
+        </Alert>
+      )}
+
+      {hasThrottle && (
+        <Alert color="amber" variant="light" icon={<IconWallet size={16} />} title="Deductions capped for the one-third rule">
+          <Text size="sm" mb={deferredDeductions.length ? 'xs' : 0}>
+            {throttledRepayments.length > 0 && (
+              <>{throttledRepayments.length} loan installment(s) were reduced or withheld </>
+            )}
+            {throttledRepayments.length > 0 && deferredDeductions.length > 0 && 'and '}
+            {deferredDeductions.length > 0 && (
+              <>{deferredDeductions.length} one-off deduction(s) were deferred </>
+            )}
+            to keep take-home pay at or above one-third of basic salary —
+            {' '}{fmtKES(carriedForwardTotal)} carried forward. Hover a deductions figure for the per-line detail.
+          </Text>
+          {deferredDeductions.length > 0 && (
+            <List size="sm">
+              {deferredDeductions.map((d) => {
+                const info = empLabel(d.employeeId);
+                return (
+                  <List.Item key={d.id}>
+                    {info.name} · {info.number} — {fmtKES(d.amount)}{d.reason ? ` (${d.reason})` : ''} deferred, still pending
+                  </List.Item>
+                );
+              })}
+            </List>
+          )}
         </Alert>
       )}
 
@@ -544,18 +593,33 @@ export function PayrollRunDetailPage() {
             <Table.Tbody>
               {run.payslips.map((p) => {
                 const info = empLabel(p.employeeId);
+                const bonusLines = p.adjustments
+                  .filter((a) => a.type === 'BONUS')
+                  .map((a) => `+${fmtKES(a.amount)} — ${a.reason ?? 'Bonus'}`);
+                const deductionLines = [
+                  ...p.loanRepayments.map((r) => {
+                    if (r.amount === 0 && r.deferredAmount > 0) {
+                      return `Loan/advance installment of ${fmtKES(r.scheduledAmount)} withheld — carried forward (one-third floor)`;
+                    }
+                    if (r.deferredAmount > 0) {
+                      return `-${fmtKES(r.amount)} — Loan/advance repayment (reduced from ${fmtKES(r.scheduledAmount)}; ${fmtKES(r.deferredAmount)} carried forward — one-third floor)`;
+                    }
+                    return `-${fmtKES(r.amount)} — Loan/advance repayment`;
+                  }),
+                  ...p.adjustments.filter((a) => a.type === 'DEDUCTION').map((a) => `-${fmtKES(a.amount)} — ${a.reason ?? 'Deduction'}`),
+                ];
                 return (
                   <Table.Tr key={p.id}>
                     <Table.Td>
                       <Text size="sm" fw={600}>{info.name}</Text>
                       <Text size="xs" c="sand.6" ff="monospace">{info.number}</Text>
                     </Table.Td>
-                    <Table.Td><Text size="sm">{fmtKES(p.grossPay)}</Text></Table.Td>
+                    <Table.Td><BreakdownText value={fmtKES(p.grossPay)} lines={bonusLines} /></Table.Td>
                     <Table.Td><Text size="sm">{fmtKES(p.paye)}</Text></Table.Td>
                     <Table.Td><Text size="sm">{fmtKES(p.nssfEmployee)}</Text></Table.Td>
                     <Table.Td><Text size="sm">{fmtKES(p.shif)}</Text></Table.Td>
                     <Table.Td><Text size="sm">{fmtKES(p.ahlEmployee)}</Text></Table.Td>
-                    <Table.Td><Text size="sm">{fmtKES(p.otherDeductions)}</Text></Table.Td>
+                    <Table.Td><BreakdownText value={fmtKES(p.otherDeductions)} lines={deductionLines} /></Table.Td>
                     <Table.Td><Text size="sm" fw={700}>{fmtKES(p.netPay)}</Text></Table.Td>
                     <Table.Td>
                       {p.oneThirdRulePass ? (

@@ -12,10 +12,21 @@ import { P9Controller } from './p9.controller';
 import { P9Service } from './p9.service';
 import { P10Controller } from './p10.controller';
 import { P10Service } from './p10.service';
+import { EmployeePayrollAdjustmentsController, PayrollAdjustmentsController } from './payroll-adjustments.controller';
+import { PayrollAdjustmentsService } from './payroll-adjustments.service';
 
 @Module({
-  controllers: [StatutoryRatesController, PayrollController, PayrollRunsController, BankExportController, P9Controller, P10Controller],
-  providers: [StatutoryRatesService, PayrollService, PayrollRunsService, PayslipPdfService, BankExportService, P9Service, P10Service],
-  exports: [StatutoryRatesService, PayrollService, PayrollRunsService, PayslipPdfService, BankExportService, P9Service, P10Service],
+  controllers: [
+    StatutoryRatesController, PayrollController, PayrollRunsController, BankExportController, P9Controller, P10Controller,
+    EmployeePayrollAdjustmentsController, PayrollAdjustmentsController,
+  ],
+  providers: [
+    StatutoryRatesService, PayrollService, PayrollRunsService, PayslipPdfService, BankExportService, P9Service, P10Service,
+    PayrollAdjustmentsService,
+  ],
+  exports: [
+    StatutoryRatesService, PayrollService, PayrollRunsService, PayslipPdfService, BankExportService, P9Service, P10Service,
+    PayrollAdjustmentsService,
+  ],
 })
 export class PayrollModule {}
