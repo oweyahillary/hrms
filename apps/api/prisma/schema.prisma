@@ -90,6 +90,28 @@ enum SalaryComponentType {
   DEDUCTION_VOLUNTARY
 }
 
+enum LoanType {
+  LOAN
+  ADVANCE
+}
+
+enum LoanStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum AdjustmentType {
+  BONUS
+  DEDUCTION
+}
+
+enum AdjustmentStatus {
+  PENDING
+  APPLIED
+  CANCELLED
+}
+
 enum StatutoryRateType {
   PAYE_BAND
   NSSF
@@ -169,6 +191,17 @@ enum ExitReason {
   RETIREMENT
 }
 
+/// How a monthly basic salary is converted into a day's pay for severance (§40)
+/// and notice pay-in-lieu (§35). The Employment Act fixes severance at "fifteen
+/// days' pay for each completed year" but never defines a day's pay from a
+/// monthly wage: CALENDAR_30 (÷30 calendar days — the common convention, giving
+/// the widely-cited "half a month per completed year") vs WORKING_26 (÷26
+/// working days). Default CALENDAR_30. See docs/severance.md for the tradeoff.
+enum SeveranceDayRateBasis {
+  CALENDAR_30 // a day's pay = monthly basic / 30 (calendar days)
+  WORKING_26 // a day's pay = monthly basic / 26 (working days)
+}
+
 // ----------------------------------------------------------------------------
 // Organization & Access
 // ----------------------------------------------------------------------------
@@ -214,6 +247,13 @@ model Organization {
   employeeNumberPrefix  String? // e.g. "VIVO", "RCLFIN", "EMP-"
   employeeNumberPadding Int     @default(4) // zero-pad width of the counter
   employeeNumberNextSeq Int     @default(1) // next counter value to hand out
+
+  // Severance & notice pay-in-lieu day-rate basis (÷30 calendar vs ÷26 working).
+  // See the SeveranceDayRateBasis enum and docs/severance.md. The value in force
+  // is snapshotted into each severance calculation's breakdown, so editing this
+  // later never retroactively changes an already-persisted calculation.
+  severanceDayRateBasis SeveranceDayRateBasis @default(CALENDAR_30)
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt // [T2]
 
@@ -236,6 +276,8 @@ model Organization {
   dataSubjectRequests   DataSubjectRequest[]
   severanceCalculations SeveranceCalculation[]
   roles                 Role[]
+  loans                 Loan[]
+  payrollAdjustments    PayrollAdjustment[]
 
   @@map("organizations")
 }
@@ -269,6 +311,8 @@ model User {
   generatedBankBatches BankExportBatch[]
   calculatedSeverances SeveranceCalculation[]
   sessions             Session[] // [T1-4]
+  createdLoans         Loan[]
+  createdAdjustments   PayrollAdjustment[]
 
   // DECISION: email scoped-unique per org, NOT globally unique. Keeps the
   // "multi-tenant is a config flip" promise honest — two tenants could
@@ -441,6 +485,8 @@ model Employee {
   consentRecords        ConsentRecord[]
   dataSubjectRequests   DataSubjectRequest[]
   severanceCalculations SeveranceCalculation[]
+  loans                 Loan[]
+  payrollAdjustments    PayrollAdjustment[]
 
   @@unique([organizationId, employeeNumber])
   @@index([nationalIdHmac]) // [T1-1] was nationalId
@@ -677,6 +723,8 @@ model PayrollRun {
 
   payslips          Payslip[]
   bankExportBatches BankExportBatch[]
+  loanRepayments      LoanRepayment[]
+  payrollAdjustments  PayrollAdjustment[]
 
   @@index([organizationId, periodYear, periodMonth])
   @@map("payroll_runs")
@@ -708,6 +756,9 @@ model Payslip {
 
   payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Restrict)
   employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Restrict) // [T1-5] retained payroll record
+
+  loanRepayments LoanRepayment[]
+  adjustments    PayrollAdjustment[]
 
   @@index([payrollRunId, employeeId])
   @@index([employeeId]) // [T2] payslip history / severance inputs per employee
@@ -827,4 +878,98 @@ model SeveranceCalculation {
   @@index([organizationId])
   @@index([employeeId])
   @@map("severance_calculations")
+}
+
+// ----------------------------------------------------------------------------
+// Loans, advances & one-off payroll adjustments
+// ----------------------------------------------------------------------------
+
+/// Employee salary advances/loans. installmentAmount is computed once at
+/// creation ((principal + interest) / numberOfInstallments); balance is
+/// decremented only when a REGULAR payroll run that applied a repayment is
+/// FINALIZED (see PayrollRunsService.buildRun) — discarding a draft run must
+/// restore it. status flips to COMPLETED when balance reaches zero, or to
+/// CANCELLED as a manual write-off (past repayments are not reversed).
+model Loan {
+  id                   String     @id @default(uuid())
+  organizationId       String
+  employeeId           String
+  type                 LoanType
+  principal            Decimal    @db.Decimal(12, 2)
+  interestRate         Decimal    @default(0) @db.Decimal(5, 2) // flat %, one-time, applied to principal
+  numberOfInstallments Int
+  installmentAmount    Decimal    @db.Decimal(12, 2)
+  balance              Decimal    @db.Decimal(12, 2) // remaining; starts at principal + interest
+  status               LoanStatus @default(ACTIVE)
+  disbursedDate        DateTime   @db.Date
+  reason               String?
+  createdById          String
+  createdAt            DateTime   @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  repayments   LoanRepayment[]
+
+  @@index([organizationId])
+  @@index([employeeId, status])
+  @@map("loans")
+}
+
+/// One row per installment a payroll run acted on. `amount` is what was actually
+/// deducted; `deferredAmount` is how much of the scheduled installment was held
+/// back to keep take-home at/above one-third of basic (Employment Act §19). A
+/// fully-withheld installment is amount 0 / deferredAmount = scheduled, so the
+/// deferral is auditable and visible on the payslip breakdown; the shortfall is
+/// carried forward in the loan balance and picked up by a later run.
+/// No organizationId — scoped via loan, same treatment as LeaveApprovalStep.
+model LoanRepayment {
+  id             String   @id @default(uuid())
+  loanId         String
+  payrollRunId   String
+  payslipId      String
+  amount         Decimal  @db.Decimal(12, 2)
+  deferredAmount Decimal  @default(0) @db.Decimal(12, 2) // held back this run to protect the one-third floor
+  balanceAfter   Decimal  @db.Decimal(12, 2)
+  createdAt      DateTime @default(now())
+
+  loan       Loan       @relation(fields: [loanId], references: [id], onDelete: Restrict)
+  payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Restrict)
+  payslip    Payslip    @relation(fields: [payslipId], references: [id], onDelete: Restrict)
+
+  @@index([loanId])
+  @@index([payrollRunId])
+  @@map("loan_repayments")
+}
+
+/// A one-off bonus or deduction tied to a specific payroll period (not a
+/// permanent SalaryComponent). PENDING adjustments are picked up by the next
+/// REGULAR run covering targetPeriodMonth/Year and flip to APPLIED with the
+/// run/payslip linked; discarding that draft run reverts them to PENDING.
+model PayrollAdjustment {
+  id                String           @id @default(uuid())
+  organizationId    String
+  employeeId        String
+  type              AdjustmentType
+  amount            Decimal          @db.Decimal(12, 2) // always positive; sign implied by `type`
+  isTaxable         Boolean          @default(true) // BONUS only: whether it also folds into taxableGross
+  reason            String
+  targetPeriodMonth Int
+  targetPeriodYear  Int
+  status            AdjustmentStatus @default(PENDING)
+  payrollRunId      String?
+  payslipId         String?
+  createdById       String
+  createdAt         DateTime         @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  payrollRun   PayrollRun?  @relation(fields: [payrollRunId], references: [id], onDelete: Restrict)
+  payslip      Payslip?     @relation(fields: [payslipId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([employeeId, status])
+  @@index([targetPeriodYear, targetPeriodMonth])
+  @@map("payroll_adjustments")
 }

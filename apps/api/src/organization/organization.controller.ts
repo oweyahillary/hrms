@@ -9,6 +9,7 @@ import { OrganizationService, type UploadedFileLike } from './organization.servi
 import { UpdateBrandingDto } from './dto/update-branding.dto';
 import { UpdateNumberingDto } from './dto/update-numbering.dto';
 import { UpdateLeaveApprovalDto } from './dto/update-leave-approval.dto';
+import { UpdatePayrollSettingsDto } from './dto/update-payroll-settings.dto';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.decorator';
@@ -70,6 +71,16 @@ export class OrganizationController {
   @Patch('employee-numbering') @Roles(...HR_MANAGEMENT_ROLES)
   updateNumbering(@CurrentUser() user: AuthUser, @Body() dto: UpdateNumberingDto) {
     return this.org.updateNumbering(user.organizationId, dto);
+  }
+
+  @Get('payroll-settings') @Roles(...HR_MANAGEMENT_ROLES)
+  getPayrollSettings(@CurrentUser() user: AuthUser) {
+    return this.org.getPayrollSettings(user.organizationId);
+  }
+
+  @Patch('payroll-settings') @Roles(...HR_MANAGEMENT_ROLES)
+  updatePayrollSettings(@CurrentUser() user: AuthUser, @Body() dto: UpdatePayrollSettingsDto) {
+    return this.org.updatePayrollSettings(user.organizationId, dto);
   }
 
   @Post('logo') @Roles(...HR_MANAGEMENT_ROLES)

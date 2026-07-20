@@ -45,6 +45,16 @@ export const getNumbering = (): Promise<Numbering> =>
 export const updateNumbering = (patch: NumberingUpdate): Promise<Numbering> =>
   api<Numbering>('/organization/employee-numbering', { method: 'PATCH', body: JSON.stringify(patch) });
 
+export type SeveranceDayRateBasis = 'CALENDAR_30' | 'WORKING_26';
+export interface PayrollSettings {
+  severanceDayRateBasis: SeveranceDayRateBasis;
+}
+export const getPayrollSettings = (): Promise<PayrollSettings> =>
+  api<PayrollSettings>('/organization/payroll-settings', { method: 'GET' });
+
+export const updatePayrollSettings = (patch: Partial<PayrollSettings>): Promise<PayrollSettings> =>
+  api<PayrollSettings>('/organization/payroll-settings', { method: 'PATCH', body: JSON.stringify(patch) });
+
 /** PNG or JPEG, up to 2 MB (enforced server-side too). */
 export const uploadLogo = (file: File): Promise<{ hasLogo: boolean }> => {
   const form = new FormData();

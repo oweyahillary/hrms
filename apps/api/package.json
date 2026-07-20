@@ -15,6 +15,7 @@
     "prisma:studio": "prisma studio",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
     "test": "jest",
+    "test:unit": "node --experimental-strip-types --test src/severance/severance-math.spec.ts",
     "seed": "ts-node scripts/seed.ts",
     "seed:rates": "ts-node scripts/seed-statutory-rates.ts",
     "smoke": "bash scripts/smoke-test.sh",

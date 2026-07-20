@@ -28,6 +28,8 @@ interface RunWithOrg {
   }>;
 }
 interface EmployeeRow { firstName: string; lastName: string; employeeNumber: string; kraPin: string | null }
+interface LoanRepaymentRow { payslipId: string; amount: unknown; loan: { type: string } }
+interface AdjustmentRow { payslipId: string | null; type: string; amount: unknown; reason: string }
 
 /**
  * Generates payslip PDFs as a step DECOUPLED from finalize: the payroll data is
@@ -68,6 +70,28 @@ export class PayslipPdfService {
     let ready = payslips.filter((p) => p.pdfStatus === 'READY').length;
     let failed = 0;
 
+    // Resolve this run's loan repayments + one-off adjustments once, so each
+    // payslip's "otherDeductions"/"grossPay" lump sum can be itemized instead
+    // of shown as a single opaque figure.
+    const repayments = (await this.prisma.loanRepayment.findMany({
+      where: { payrollRunId: runId } as never,
+      include: { loan: { select: { type: true } } },
+    } as never)) as unknown as LoanRepaymentRow[];
+    const repaymentsByPayslip = new Map<string, LoanRepaymentRow[]>();
+    for (const r of repayments) {
+      const arr = repaymentsByPayslip.get(r.payslipId);
+      if (arr) arr.push(r); else repaymentsByPayslip.set(r.payslipId, [r]);
+    }
+    const adjustments = (await this.prisma.payrollAdjustment.findMany({
+      where: { payrollRunId: runId } as never,
+    })) as unknown as AdjustmentRow[];
+    const adjustmentsByPayslip = new Map<string, AdjustmentRow[]>();
+    for (const a of adjustments) {
+      if (!a.payslipId) continue;
+      const arr = adjustmentsByPayslip.get(a.payslipId);
+      if (arr) arr.push(a); else adjustmentsByPayslip.set(a.payslipId, [a]);
+    }
+
     // Resolve the org logo once (fail-soft); shared by every payslip in the run.
     let logo: { buffer: Buffer; alignment: 'LEFT' | 'CENTER' | 'RIGHT' } | null = null;
     if (run.organization.logoPath) {
@@ -90,6 +114,25 @@ export class PayslipPdfService {
         if (!emp) throw new Error(`employee ${p.employeeId} not found`);
 
         const empKraPin = emp.kraPin ? await this.crypto.decrypt(emp.kraPin) : null;
+
+        const psRepayments = repaymentsByPayslip.get(p.id) ?? [];
+        const psAdjustments = adjustmentsByPayslip.get(p.id) ?? [];
+        const bonusLines = psAdjustments
+          .filter((a) => a.type === 'BONUS')
+          .map((a) => ({ label: `Bonus — ${a.reason}`, amount: Number(a.amount) }));
+        const deductionLines = [
+          ...psRepayments.map((r) => ({
+            label: r.loan.type === 'ADVANCE' ? 'Salary advance repayment' : 'Loan repayment',
+            amount: Number(r.amount),
+          })),
+          ...psAdjustments
+            .filter((a) => a.type === 'DEDUCTION')
+            .map((a) => ({ label: `Deduction — ${a.reason}`, amount: Number(a.amount) })),
+        ];
+        const itemizedTotal = deductionLines.reduce((acc, l) => acc + l.amount, 0);
+        const residual = Math.round((Number(p.otherDeductions) - itemizedTotal + Number.EPSILON) * 100) / 100;
+        if (residual > 0.01) deductionLines.push({ label: 'Other deductions (salary structure)', amount: residual });
+
         const data: PayslipDocumentData = {
           employer: {
             name: run.organization.name,
@@ -105,10 +148,11 @@ export class PayslipPdfService {
             kraPin: empKraPin,
           },
           period: { month: run.periodMonth, year: run.periodYear, runType: run.runType },
-          earnings: { grossPay: Number(p.grossPay) },
+          earnings: { grossPay: Number(p.grossPay), lines: bonusLines },
           deductions: {
             paye: Number(p.paye), nssfEmployee: Number(p.nssfEmployee), shif: Number(p.shif),
             ahlEmployee: Number(p.ahlEmployee), otherDeductions: Number(p.otherDeductions),
+            otherDeductionLines: deductionLines.length ? deductionLines : undefined,
           },
           employerContributions: {
             nssfEmployer: Number(p.nssfEmployer), ahlEmployer: Number(p.ahlEmployer),
