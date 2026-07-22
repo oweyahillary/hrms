@@ -56,17 +56,9 @@ const NAV: NavItem[] = [
  * roles that can actually use it, the same way ADMIN_NAV below hides Settings.
  */
 const PAYROLL_NAV: NavItem[] = [
-  {
-    to: '/payroll',
-    label: 'Payroll',
-    icon: IconReportMoney,
-    children: [
-      // '/payroll' is both the section and the runs list, so it needs an exact
-      // match — same reasoning as '/leave' above.
-      { to: '/payroll', label: 'Runs', exact: true },
-      { to: '/payroll/preview', label: 'Preview calculator' },
-    ],
-  },
+  // Flat single entry: the Run / Setup / Reports sub-navigation lives in a tab
+  // bar at the top of the Payroll section (PayrollLayout), not in the sidebar.
+  { to: '/payroll', label: 'Payroll', icon: IconReportMoney },
 ];
 
 /** Settings is organisation administration — only for roles that can manage it. */
