@@ -28,7 +28,11 @@ interface Breakdown {
   reason: string; hireDate: string; exitDate: string; basicSalary: number; daysPerMonth: number; dailyRate: number;
   severance: { applies: boolean; daysPerYear: number; completedYears: number; formula: string; gross: number; note: string };
   notice: { payFrequency: string; statutoryDays: number; contractualDays: number | null; appliedDays: number; basis: string; payInLieu: number };
-  paye: { status: string; note: string; paye?: number | null };
+  paye: {
+    status: string; note: string; paye?: number | null;
+    bucket?: string; periods?: number; amountPerPeriod?: number; payePerPeriod?: number;
+    net?: number | null; taxableGross?: number;
+  };
   totals: { severanceGross: number; noticePayInLieu: number; grossExitPay: number };
 }
 interface SeveranceResult {
@@ -59,14 +63,15 @@ async function main(): Promise<void> {
     if (!id) throw new Error(`employee create failed for ${tag}`);
     await fetch(`${BASE}/employees/${id}/salary-structures`, {
       method: 'POST', headers: authJson,
-      body: JSON.stringify({ basicSalary: basic, effectiveDate: hireDate }),
+      body: JSON.stringify({ basicSalary: basic, effectiveDate: hireDate , reason: 'Salary revision'}),
     });
     return id;
   }
 
   async function calc(empId: string, body: Record<string, unknown>): Promise<SeveranceResult> {
     const res = await fetch(`${BASE}/employees/${empId}/severance-calculations`, {
-      method: 'POST', headers: authJson, body: JSON.stringify(body),
+      method: 'POST', headers: authJson,
+      body: JSON.stringify({ contractTermType: 'NO_PROVISION', ...body }),
     });
     return (await res.json()) as SeveranceResult;
   }
@@ -165,6 +170,61 @@ async function main(): Promise<void> {
 
   // Leave the org back on the default so re-runs start clean.
   await setBasis('CALENDAR_30');
+
+  // ── Scenario 7: contract-type buckets — the KRA PAYE spread genuinely
+  // differs by bucket, not just "accepted with a flag" like scenarios 1–6.
+  // verify-severance.ts previously only ever sent NO_PROVISION (the `calc()`
+  // helper's default) to the live server — FIXED_TERM and
+  // UNSPECIFIED_WITH_CLAUSE were unit-tested in isolation only. This exit
+  // date (2026-06-30) is deliberately inside full statutory-rate coverage —
+  // unlike scenarios 1–6's 2024 dates, which predate the seeded NSSF rate and
+  // so only ever exercise the UNAVAILABLE degrade path — specifically so PAYE
+  // computes real numbers here and those numbers can be checked by hand.
+  const e7 = await makeEmployee('SEV7', '2020-01-01', 60000);
+
+  // FIXED_TERM: the lump sum spreads over the unexpired contract months.
+  const fixedTerm = await calc(e7, {
+    reason: 'REDUNDANCY', exitDate: '2026-06-30', payFrequency: 'MONTHLY',
+    contractTermType: 'FIXED_TERM', unexpiredTermMonths: 6,
+  });
+  const ftPaye = fixedTerm.calculationBreakdown.paye;
+  check('FIXED_TERM: severance = 2000 × 15 × 6 = 180000', fixedTerm.severanceAmount === 180000, String(fixedTerm.severanceAmount));
+  check('FIXED_TERM: bucket recorded on the breakdown', ftPaye.bucket === 'FIXED_TERM', String(ftPaye.bucket));
+  check('FIXED_TERM: spreads over the 6 unexpired months (not some other period count)', ftPaye.periods === 6, String(ftPaye.periods));
+  check('FIXED_TERM: each period is an even slice (180000 / 6 = 30000)', ftPaye.amountPerPeriod === 30000, String(ftPaye.amountPerPeriod));
+  check('FIXED_TERM: PAYE actually computed a figure this time (rates in force)',
+    ftPaye.status === 'PROVISIONAL_UNVERIFIED' && typeof ftPaye.paye === 'number',
+    JSON.stringify({ status: ftPaye.status, paye: ftPaye.paye }));
+  // By hand: 30000 taxable -> 24000 @10% + 6000 @25% = 2400 + 1500 = 3900 before
+  // relief; minus the 2400 personal relief = 1500/period; × 6 periods = 9000.
+  check('FIXED_TERM: PAYE per period = 1500 (24000@10% + 6000@25%, less 2400 relief)', ftPaye.payePerPeriod === 1500, String(ftPaye.payePerPeriod));
+  check('FIXED_TERM: total PAYE = 1500 × 6 = 9000', ftPaye.paye === 9000, String(ftPaye.paye));
+  check('FIXED_TERM: net = taxableGross − PAYE (180000 − 9000 = 171000)', ftPaye.net === 171000, String(ftPaye.net));
+
+  // UNSPECIFIED_WITH_CLAUSE: spreads forward at the pre-termination monthly rate.
+  const unspecified = await calc(e7, {
+    reason: 'REDUNDANCY', exitDate: '2026-06-30', payFrequency: 'MONTHLY',
+    contractTermType: 'UNSPECIFIED_WITH_CLAUSE',
+  });
+  const uwPaye = unspecified.calculationBreakdown.paye;
+  check('UNSPECIFIED_WITH_CLAUSE: severance is the same 180000 (bucket only changes the PAYE spread)', unspecified.severanceAmount === 180000, String(unspecified.severanceAmount));
+  check('UNSPECIFIED_WITH_CLAUSE: bucket recorded on the breakdown', uwPaye.bucket === 'UNSPECIFIED_WITH_CLAUSE', String(uwPaye.bucket));
+  check('UNSPECIFIED_WITH_CLAUSE: spreads at the pre-termination monthly rate (60000/period over 3 periods)',
+    uwPaye.amountPerPeriod === 60000 && uwPaye.periods === 3,
+    JSON.stringify({ amountPerPeriod: uwPaye.amountPerPeriod, periods: uwPaye.periods }));
+  check('UNSPECIFIED_WITH_CLAUSE: PAYE actually computed a figure (rates in force)',
+    uwPaye.status === 'PROVISIONAL_UNVERIFIED' && typeof uwPaye.paye === 'number',
+    JSON.stringify({ status: uwPaye.status, paye: uwPaye.paye }));
+  // By hand: 60000 taxable -> 24000@10% + 8333@25% + 27667@30%
+  //   = 2400 + 2083.25 + 8300.10 = 12783.35 before relief; minus 2400 relief = 10383.35/period.
+  check('UNSPECIFIED_WITH_CLAUSE: PAYE per period = 10383.35 (three PAYE bands, less relief)', uwPaye.payePerPeriod === 10383.35, String(uwPaye.payePerPeriod));
+  check('UNSPECIFIED_WITH_CLAUSE: total PAYE = 10383.35 × 3 = 31150.05', uwPaye.paye === 31150.05, String(uwPaye.paye));
+  check('UNSPECIFIED_WITH_CLAUSE: net = taxableGross − PAYE (180000 − 31150.05 = 148849.95)', uwPaye.net === 148849.95, String(uwPaye.net));
+
+  // Same severance principal, genuinely different PAYE outcomes — proves the
+  // bucket selection actually drives the spread instead of being a no-op.
+  check('FIXED_TERM and UNSPECIFIED_WITH_CLAUSE produce different total PAYE for the same lump sum',
+    ftPaye.paye !== uwPaye.paye, `${ftPaye.paye} vs ${uwPaye.paye}`);
 
   console.log(`\n  ${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);
