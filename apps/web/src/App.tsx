@@ -28,6 +28,8 @@ import { SettingsPage } from './pages/SettingsPage';
 import { SettingsLeavePage } from './pages/SettingsLeavePage';
 import { SettingsNumberingPage } from './pages/SettingsNumberingPage';
 import { SettingsPayrollPage } from './pages/SettingsPayrollPage';
+import { UsersPage } from './pages/UsersPage';
+import { InviteUserPage } from './pages/InviteUserPage';
 
 export function App() {
   return (
@@ -66,6 +68,8 @@ export function App() {
                 <Route path="/settings/leave" element={<SettingsLeavePage />} />
                 <Route path="/settings/numbering" element={<SettingsNumberingPage />} />
                 <Route path="/settings/payroll" element={<SettingsPayrollPage />} />
+                <Route path="/settings/users" element={<UsersPage />} />
+                <Route path="/settings/users/new" element={<InviteUserPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </AppShellLayout>
