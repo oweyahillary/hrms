@@ -1,7 +1,9 @@
+import { describe, test } from 'node:test';
+import assert from 'node:assert/strict';
 import {
   computeBonusAdditions, computePayrollExtras, oneThirdDeductionBudget,
   type AdjustmentForExtras, type LoanForExtras,
-} from './payroll-extras';
+} from './payroll-extras.ts';
 
 const loan = (id: string, balance: number, installmentAmount: number): LoanForExtras =>
   ({ id, balance, installmentAmount });
@@ -9,107 +11,110 @@ const ded = (id: string, amount: number): AdjustmentForExtras =>
   ({ id, type: 'DEDUCTION', amount, isTaxable: false });
 const bonus = (id: string, amount: number, isTaxable = true): AdjustmentForExtras =>
   ({ id, type: 'BONUS', amount, isTaxable });
+const closeTo = (actual: number, expected: number, digits = 2): void =>
+  assert.ok(Math.abs(actual - expected) < Math.pow(10, -digits) / 2, `${actual} not close to ${expected}`);
 
 describe('oneThirdDeductionBudget', () => {
-  it('is net-after-statutory minus protected deductions minus one-third of basic', () => {
+  test('is net-after-statutory minus protected deductions minus one-third of basic', () => {
     // basic 30000 -> floor 10000; net after statutory 27000; no protected ded.
-    expect(oneThirdDeductionBudget(27000, 0, 30000)).toBeCloseTo(17000, 2);
+    closeTo(oneThirdDeductionBudget(27000, 0, 30000), 17000);
   });
-  it('subtracts protected (salary-structure voluntary) deductions from the budget', () => {
-    expect(oneThirdDeductionBudget(27000, 5000, 30000)).toBeCloseTo(12000, 2);
+  test('subtracts protected (salary-structure voluntary) deductions from the budget', () => {
+    closeTo(oneThirdDeductionBudget(27000, 5000, 30000), 12000);
   });
-  it('goes negative when statutory + protected already breach the floor', () => {
-    expect(oneThirdDeductionBudget(12000, 5000, 30000)).toBeLessThan(0);
+  test('goes negative when statutory + protected already breach the floor', () => {
+    assert.ok(oneThirdDeductionBudget(12000, 5000, 30000) < 0);
   });
 });
 
 describe('computeBonusAdditions', () => {
-  it('sums bonuses into gross, only taxable ones into taxable gross', () => {
+  test('sums bonuses into gross, only taxable ones into taxable gross', () => {
     const r = computeBonusAdditions([bonus('b1', 5000, true), bonus('b2', 3000, false)]);
-    expect(r.bonusGross).toBe(8000);
-    expect(r.bonusTaxableGross).toBe(5000);
+    assert.equal(r.bonusGross, 8000);
+    assert.equal(r.bonusTaxableGross, 5000);
   });
 });
 
 describe('computePayrollExtras — no budget (back-compat: apply full)', () => {
-  it('applies the full loan installment when unthrottled', () => {
+  test('applies the full loan installment when unthrottled', () => {
     const r = computePayrollExtras([loan('L', 12000, 4000)], []);
-    expect(r.extraDeductions).toBe(4000);
-    expect(r.throttled).toBe(false);
-    expect(r.loanApplications[0]).toMatchObject({ amount: 4000, balanceAfter: 8000, deferredAmount: 0, throttled: false });
+    assert.equal(r.extraDeductions, 4000);
+    assert.equal(r.throttled, false);
+    const a = r.loanApplications[0];
+    assert.equal(a.amount, 4000);
+    assert.equal(a.balanceAfter, 8000);
+    assert.equal(a.deferredAmount, 0);
+    assert.equal(a.throttled, false);
   });
-  it('final installment is capped at the remaining balance', () => {
+  test('final installment is capped at the remaining balance', () => {
     const r = computePayrollExtras([loan('L', 2500, 4000)], []);
-    expect(r.loanApplications[0].amount).toBe(2500);
-    expect(r.loanApplications[0].completesLoan).toBe(true);
+    assert.equal(r.loanApplications[0].amount, 2500);
+    assert.equal(r.loanApplications[0].completesLoan, true);
   });
 });
 
 describe('computePayrollExtras — one-third throttle on loans', () => {
-  it('reduces a loan installment to the floor budget and carries the shortfall forward', () => {
-    // budget 3000, installment 5000 -> apply 3000, defer 2000, balance keeps the rest
+  test('reduces a loan installment to the floor budget and carries the shortfall forward', () => {
     const r = computePayrollExtras([loan('L', 20000, 5000)], [], 3000);
     const a = r.loanApplications[0];
-    expect(a.amount).toBe(3000);
-    expect(a.deferredAmount).toBe(2000);
-    expect(a.balanceAfter).toBe(17000); // 20000 - 3000, remainder still owed
-    expect(a.throttled).toBe(true);
-    expect(r.deferredDeductions).toBe(2000);
-    expect(r.throttled).toBe(true);
+    assert.equal(a.amount, 3000);
+    assert.equal(a.deferredAmount, 2000);
+    assert.equal(a.balanceAfter, 17000);
+    assert.equal(a.throttled, true);
+    assert.equal(r.deferredDeductions, 2000);
+    assert.equal(r.throttled, true);
   });
-  it('a zero/negative budget withholds the whole installment (balance untouched)', () => {
+  test('a zero/negative budget withholds the whole installment (balance untouched)', () => {
     const r = computePayrollExtras([loan('L', 20000, 5000)], [], 0);
     const a = r.loanApplications[0];
-    expect(a.amount).toBe(0);
-    expect(a.deferredAmount).toBe(5000);
-    expect(a.balanceAfter).toBe(20000);
-    expect(a.completesLoan).toBe(false);
-    expect(r.extraDeductions).toBe(0);
+    assert.equal(a.amount, 0);
+    assert.equal(a.deferredAmount, 5000);
+    assert.equal(a.balanceAfter, 20000);
+    assert.equal(a.completesLoan, false);
+    assert.equal(r.extraDeductions, 0);
   });
-  it('never applies more than the budget across several loans (oldest first wins)', () => {
+  test('never applies more than the budget across several loans (oldest first wins)', () => {
     const r = computePayrollExtras([loan('old', 9000, 3000), loan('new', 9000, 3000)], [], 4000);
-    expect(r.extraDeductions).toBeLessThanOrEqual(4000);
-    expect(r.loanApplications[0].amount).toBe(3000); // oldest fully served
-    expect(r.loanApplications[1].amount).toBe(1000); // newer absorbs the shortfall
+    assert.ok(r.extraDeductions <= 4000);
+    assert.equal(r.loanApplications[0].amount, 3000);
+    assert.equal(r.loanApplications[1].amount, 1000);
   });
 });
 
 describe('computePayrollExtras — adjustment deductions are whole-or-defer, ahead of loans', () => {
-  it('applies a one-off deduction that fits, before the loan', () => {
-    // budget 10000: deduction 4000 applies, loan 5000 applies (total 9000 <= 10000)
+  test('applies a one-off deduction that fits, before the loan', () => {
     const r = computePayrollExtras([loan('L', 20000, 5000)], [ded('d', 4000)], 10000);
-    expect(r.adjustmentApplications.find((x) => x.id === 'd')).toMatchObject({ applied: true, amount: 4000 });
-    expect(r.loanApplications[0].amount).toBe(5000);
-    expect(r.throttled).toBe(false);
+    const adj = r.adjustmentApplications.find((x) => x.id === 'd')!;
+    assert.equal(adj.applied, true);
+    assert.equal(adj.amount, 4000);
+    assert.equal(r.loanApplications[0].amount, 5000);
+    assert.equal(r.throttled, false);
   });
-  it('defers a one-off deduction that does not fit (kept whole), and loans take the rest', () => {
-    // budget 3000: deduction 4000 cannot fit -> deferred; loan then uses the 3000
+  test('defers a one-off deduction that does not fit (kept whole), and loans take the rest', () => {
     const r = computePayrollExtras([loan('L', 20000, 5000)], [ded('d', 4000)], 3000);
     const adj = r.adjustmentApplications.find((x) => x.id === 'd')!;
-    expect(adj.applied).toBe(false);
-    expect(adj.deferred).toBe(true);
-    expect(adj.amount).toBe(0);
-    expect(r.loanApplications[0].amount).toBe(3000);
-    expect(r.loanApplications[0].deferredAmount).toBe(2000); // loan short by 2000
-    // total deferred = the whole 4000 deduction + the loan's throttled 2000
-    expect(r.deferredDeductions).toBe(6000);
+    assert.equal(adj.applied, false);
+    assert.equal(adj.deferred, true);
+    assert.equal(adj.amount, 0);
+    assert.equal(r.loanApplications[0].amount, 3000);
+    assert.equal(r.loanApplications[0].deferredAmount, 2000);
+    assert.equal(r.deferredDeductions, 6000);
   });
-  it('bonuses always apply and never count against the deduction budget', () => {
+  test('bonuses always apply and never count against the deduction budget', () => {
     const r = computePayrollExtras([], [bonus('b', 5000), ded('d', 2000)], 1000);
-    expect(r.bonusGross).toBe(5000);
-    expect(r.adjustmentApplications.find((x) => x.id === 'b')!.applied).toBe(true);
-    // deduction 2000 does not fit in 1000 -> deferred
-    expect(r.adjustmentApplications.find((x) => x.id === 'd')!.deferred).toBe(true);
+    assert.equal(r.bonusGross, 5000);
+    assert.equal(r.adjustmentApplications.find((x) => x.id === 'b')!.applied, true);
+    assert.equal(r.adjustmentApplications.find((x) => x.id === 'd')!.deferred, true);
   });
 });
 
 describe('computePayrollExtras — the guarantee', () => {
-  it('applied throttleable deductions never exceed the budget (cents-exact)', () => {
+  test('applied throttleable deductions never exceed the budget (cents-exact)', () => {
     const r = computePayrollExtras(
       [loan('a', 100000, 3333.33), loan('b', 100000, 1250.5)],
       [ded('d1', 900.25), ded('d2', 100)],
       5000,
     );
-    expect(r.extraDeductions).toBeLessThanOrEqual(5000 + 1e-9);
+    assert.ok(r.extraDeductions <= 5000 + 1e-9);
   });
 });

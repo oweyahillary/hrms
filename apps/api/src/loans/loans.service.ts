@@ -1,10 +1,12 @@
-import { ConflictException, Inject, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { PRISMA, type ExtendedPrismaClient } from '../prisma/prisma.service';
 import { getRequestContext } from '../common/context/request-context';
-import { computeInstallmentPlan } from './loan-math';
+import { advanceExceedsCap, computeInstallmentPlan, maxAdvancePrincipal } from './loan-math';
+import { pickEffectiveStructure } from '../salary/salary-math';
 import type { CreateLoanDto } from './dto/create-loan.dto';
 
 interface RepaymentRow { id: string; payrollRunId: string; payslipId: string; amount: unknown; balanceAfter: unknown; createdAt: Date; }
+interface StructureRow { basicSalary: unknown; effectiveDate: Date; endDate: Date | null; }
 interface LoanRow {
   id: string; employeeId: string; type: string; principal: unknown; interestRate: unknown;
   numberOfInstallments: number; installmentAmount: unknown; balance: unknown; status: string;
@@ -19,6 +21,25 @@ export class LoansService {
     await this.assertEmployee(employeeId);
     const ctx = getRequestContext();
     if (!ctx.userId) throw new InternalServerErrorException('Missing authenticated user in context');
+
+    // Employment Act §19: an employer-issued ADVANCE may not exceed two months'
+    // basic salary. Does NOT apply to a LOAN. Reject over-limit requests rather
+    // than silently clamping the amount.
+    if (dto.type === 'ADVANCE') {
+      const structures = (await this.prisma.salaryStructure.findMany({
+        where: { employeeId } as never,
+      })) as unknown as StructureRow[];
+      const structure = pickEffectiveStructure(structures, new Date(dto.disbursedDate));
+      if (!structure) {
+        throw new BadRequestException('Cannot issue an advance: no salary structure is in effect on the disbursement date.');
+      }
+      const basicSalary = Number(structure.basicSalary);
+      if (advanceExceedsCap(dto.principal, basicSalary)) {
+        throw new BadRequestException(
+          `A salary advance may not exceed two months' basic salary (maximum ${maxAdvancePrincipal(basicSalary)} for this employee); requested ${dto.principal}.`,
+        );
+      }
+    }
 
     const plan = computeInstallmentPlan({
       principal: dto.principal,
@@ -36,7 +57,7 @@ export class LoansService {
         installmentAmount: plan.installmentAmount,
         balance: plan.totalPayable,
         disbursedDate: new Date(dto.disbursedDate),
-        reason: dto.reason ?? null,
+        reason: dto.reason,
         createdById: ctx.userId,
       } as never,
     })) as unknown as LoanRow;

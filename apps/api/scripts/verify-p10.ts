@@ -73,7 +73,7 @@ async function main(): Promise<void> {
   await fetch(`${BASE}/employees/${employeeId}/salary-structures`, {
     method: 'POST', headers: authJson,
     body: JSON.stringify({
-      basicSalary: BASIC, effectiveDate: '2026-01-01',
+      basicSalary: BASIC, effectiveDate: '2026-01-01', reason: 'Salary revision',
       components: [
         { componentType: 'ALLOWANCE', name: 'House Allowance', amount: HOUSING, isTaxable: true },
         { componentType: 'ALLOWANCE', name: 'Per Diem', amount: PERDIEM, isTaxable: false },

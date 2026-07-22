@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateLoanDto {
   @IsIn(['LOAN', 'ADVANCE'])
@@ -16,6 +16,8 @@ export class CreateLoanDto {
   @IsDateString()
   disbursedDate!: string;
 
-  @IsOptional() @IsString()
-  reason?: string;
+  // Required, matching PayrollAdjustment.reason — loans are the most exposed
+  // legally, so the "why" must always be on record.
+  @IsString() @IsNotEmpty()
+  reason!: string;
 }

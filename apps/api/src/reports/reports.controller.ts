@@ -72,4 +72,63 @@ export class ReportsController {
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${filename}"` });
     return new StreamableFile(buffer);
   }
+
+  @Get('loan-book') @Roles(...HR_MANAGEMENT_ROLES)
+  loanBook(@Query('employeeId') employeeId?: string, @Query('status') status?: string) {
+    return this.reports.loanBook({ employeeId, status });
+  }
+
+  @Get('loan-book/pdf') @Roles(...HR_MANAGEMENT_ROLES)
+  async loanBookPdf(
+    @Res({ passthrough: true }) res: Response,
+    @Query('employeeId') employeeId?: string,
+    @Query('status') status?: string,
+  ): Promise<StreamableFile> {
+    const { buffer, filename } = await this.reports.loanBookPdf({ employeeId, status });
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${filename}"` });
+    return new StreamableFile(buffer);
+  }
+
+  @Get('severance-register') @Roles(...HR_MANAGEMENT_ROLES)
+  severanceRegister() {
+    return this.reports.severanceRegister();
+  }
+
+  @Get('severance-register/pdf') @Roles(...HR_MANAGEMENT_ROLES)
+  async severanceRegisterPdf(@Res({ passthrough: true }) res: Response): Promise<StreamableFile> {
+    const { buffer, filename } = await this.reports.severanceRegisterPdf();
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${filename}"` });
+    return new StreamableFile(buffer);
+  }
+
+  @Get('adjustments-register') @Roles(...HR_MANAGEMENT_ROLES)
+  adjustmentsRegister(
+    @Query('employeeId') employeeId?: string,
+    @Query('status') status?: string,
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ) {
+    return this.reports.adjustmentsRegister({
+      employeeId, status,
+      year: year ? Number(year) : undefined,
+      month: month ? Number(month) : undefined,
+    });
+  }
+
+  @Get('adjustments-register/pdf') @Roles(...HR_MANAGEMENT_ROLES)
+  async adjustmentsRegisterPdf(
+    @Res({ passthrough: true }) res: Response,
+    @Query('employeeId') employeeId?: string,
+    @Query('status') status?: string,
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ): Promise<StreamableFile> {
+    const { buffer, filename } = await this.reports.adjustmentsRegisterPdf({
+      employeeId, status,
+      year: year ? Number(year) : undefined,
+      month: month ? Number(month) : undefined,
+    });
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${filename}"` });
+    return new StreamableFile(buffer);
+  }
 }

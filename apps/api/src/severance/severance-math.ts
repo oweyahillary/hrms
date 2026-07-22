@@ -181,6 +181,84 @@ export interface SeveranceComputation {
 }
 
 /**
+ * Contract classification for PAYE spreading of a severance lump sum — the KRA
+ * three-bucket rule (docs/severance.md). Specific to a given exit, supplied at
+ * calculation time.
+ */
+export type ContractTermType = 'FIXED_TERM' | 'UNSPECIFIED_WITH_CLAUSE' | 'NO_PROVISION';
+
+export interface SeveranceTaxSpread {
+  bucket: ContractTermType;
+  /** Human-readable statement of the rule applied — part of the audit trail. */
+  rule: string;
+  /** Number of equal MONTHLY periods the lump sum is spread across for PAYE. */
+  periods: number;
+  /** Taxable amount assigned to each period (lump sum / periods). */
+  amountPerPeriod: number;
+}
+
+/**
+ * Resolve which KRA bucket applies and how the lump sum spreads for PAYE. All
+ * three buckets resolve to a number of MONTHLY periods, so each slice can run
+ * through the ordinary monthly PAYE bands (the way a normal month is taxed)
+ * rather than taxing the whole lump sum in the exit month:
+ *
+ *   FIXED_TERM              → spread over the unexpired term (unexpiredTermMonths)
+ *   UNSPECIFIED_WITH_CLAUSE → spread forward at the pre-termination monthly rate
+ *                             (periods = ceil(lump ÷ monthly gross))
+ *   NO_PROVISION            → spread evenly over the 3 years (36 months) after exit
+ *
+ * FIXED_TERM without a positive unexpiredTermMonths REJECTS (throws) rather than
+ * silently defaulting. This produces the methodology only — the resulting PAYE
+ * remains PROVISIONAL_UNVERIFIED until a tax firm signs the methodology off.
+ */
+export function classifySeveranceTaxTreatment(input: {
+  severanceAmount: number;
+  contractTermType: ContractTermType;
+  unexpiredTermMonths?: number | null;
+  annualGross: number;
+}): SeveranceTaxSpread {
+  const amount = Math.max(0, round2(input.severanceAmount));
+
+  switch (input.contractTermType) {
+    case 'FIXED_TERM': {
+      const m = input.unexpiredTermMonths;
+      if (m == null || !(m > 0)) {
+        throw new Error('unexpiredTermMonths is required and must be positive for a FIXED_TERM contract.');
+      }
+      const periods = Math.floor(m);
+      return {
+        bucket: 'FIXED_TERM',
+        rule: 'Fixed-term contract: lump sum spread over the unexpired term.',
+        periods,
+        amountPerPeriod: round2(amount / periods),
+      };
+    }
+    case 'UNSPECIFIED_WITH_CLAUSE': {
+      const monthly = input.annualGross / 12;
+      const periods = monthly > 0 ? Math.max(1, Math.ceil(amount / monthly)) : 1;
+      return {
+        bucket: 'UNSPECIFIED_WITH_CLAUSE',
+        rule: 'Unspecified-term contract with a termination-pay clause: spread forward at the pre-termination rate.',
+        periods,
+        amountPerPeriod: round2(amount / periods),
+      };
+    }
+    case 'NO_PROVISION': {
+      const periods = 36; // 3 years following termination
+      return {
+        bucket: 'NO_PROVISION',
+        rule: 'No provision for compensation: spread evenly over the 3 years following termination.',
+        periods,
+        amountPerPeriod: round2(amount / periods),
+      };
+    }
+    default:
+      throw new Error(`Unknown contract term type: ${String(input.contractTermType)}`);
+  }
+}
+
+/**
  * Assemble the full deterministic breakdown for a severance calculation. Every
  * input and intermediate is captured so a disputed payout can be reconstructed
  * by hand. The PAYE block is deliberately absent here — it needs the live

@@ -52,7 +52,7 @@ async function main(): Promise<void> {
   if (!employeeId) { console.log('  FAIL  employee create'); process.exit(1); }
   await fetch(`${BASE}/employees/${employeeId}/salary-structures`, {
     method: 'POST', headers: authJson,
-    body: JSON.stringify({ basicSalary: 60000, effectiveDate: '2020-01-01' }),
+    body: JSON.stringify({ basicSalary: 60000, effectiveDate: '2020-01-01' , reason: 'Salary revision'}),
   });
 
   async function createAdjustment(body: Record<string, unknown>): Promise<{ id?: string; status?: string }> {

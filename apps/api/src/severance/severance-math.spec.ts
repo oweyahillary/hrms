@@ -10,6 +10,7 @@ import {
   DAYS_PER_MONTH,
   SEVERANCE_DAYS_PER_YEAR,
   WORKING_DAYS_PER_MONTH,
+  classifySeveranceTaxTreatment,
 } from './severance-math.ts';
 
 const d = (iso: string): Date => new Date(`${iso}T00:00:00.000Z`);
@@ -151,4 +152,47 @@ test('buildSeveranceComputation snapshots the basis it was given (not always 30)
   assert.equal(b.severance.gross, 173076.75);
   // notice pay-in-lieu also uses the same basis
   assert.equal((c.notice as { dailyRate: number }).dailyRate, 2307.69);
+});
+
+// -- classifySeveranceTaxTreatment (KRA three-bucket PAYE spreading) ----------
+
+test('FIXED_TERM spreads the lump sum over the unexpired term months', () => {
+  const s = classifySeveranceTaxTreatment({
+    severanceAmount: 120000, contractTermType: 'FIXED_TERM', unexpiredTermMonths: 6, annualGross: 720000,
+  });
+  assert.equal(s.bucket, 'FIXED_TERM');
+  assert.equal(s.periods, 6);
+  assert.equal(s.amountPerPeriod, 20000); // 120000 / 6
+});
+
+test('UNSPECIFIED_WITH_CLAUSE spreads forward at the pre-termination monthly rate', () => {
+  // monthly gross = 600000/12 = 50000; ceil(175000/50000) = 4 periods
+  const s = classifySeveranceTaxTreatment({
+    severanceAmount: 175000, contractTermType: 'UNSPECIFIED_WITH_CLAUSE', annualGross: 600000,
+  });
+  assert.equal(s.bucket, 'UNSPECIFIED_WITH_CLAUSE');
+  assert.equal(s.periods, 4);
+  assert.equal(s.amountPerPeriod, 43750); // 175000 / 4
+});
+
+test('NO_PROVISION spreads evenly over 36 months (3 years)', () => {
+  const s = classifySeveranceTaxTreatment({
+    severanceAmount: 360000, contractTermType: 'NO_PROVISION', annualGross: 600000,
+  });
+  assert.equal(s.bucket, 'NO_PROVISION');
+  assert.equal(s.periods, 36);
+  assert.equal(s.amountPerPeriod, 10000); // 360000 / 36
+});
+
+test('FIXED_TERM without unexpiredTermMonths rejects (does not silently default)', () => {
+  assert.throws(
+    () => classifySeveranceTaxTreatment({
+      severanceAmount: 120000, contractTermType: 'FIXED_TERM', annualGross: 720000,
+    }),
+    /unexpiredTermMonths is required/,
+  );
+  // zero / negative are equally invalid
+  assert.throws(() => classifySeveranceTaxTreatment({
+    severanceAmount: 120000, contractTermType: 'FIXED_TERM', unexpiredTermMonths: 0, annualGross: 720000,
+  }), /unexpiredTermMonths is required/);
 });

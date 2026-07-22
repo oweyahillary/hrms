@@ -65,7 +65,7 @@ assert_contains "$EMP_JSON" "\"employeeNumber\":\"$EMPNO\"" "created throwaway e
 if [ -z "$EMP_ID" ]; then red "  ABORT  employee creation failed — cannot continue:"; echo "$EMP_JSON"; exit 1; fi
 
 STRUCT=$(req POST "/employees/$EMP_ID/salary-structures" '{
-  "basicSalary":80000,"effectiveDate":"2026-01-01",
+  "basicSalary":80000,"effectiveDate":"2026-01-01","reason":"Salary revision",
   "components":[
     {"componentType":"ALLOWANCE","name":"House","amount":20000,"isTaxable":true},
     {"componentType":"ALLOWANCE","name":"PerDiem","amount":5000,"isTaxable":false},

@@ -43,3 +43,22 @@ export function computeInstallmentPlan(terms: LoanTerms): LoanInstallmentPlan {
 export function nextInstallment(balance: number, installmentAmount: number): number {
   return round2(Math.min(Math.max(0, balance), installmentAmount));
 }
+
+/**
+ * Employment Act §19: an employer-issued salary ADVANCE may not exceed two
+ * months' basic salary. This does NOT apply to a LOAN. Kept here as pure logic
+ * so the cap is unit-testable in isolation; LoansService supplies the employee's
+ * effective basic salary and enforces it on ADVANCE creation (rejecting, not
+ * clamping, an over-limit request).
+ */
+export const ADVANCE_CAP_MONTHS = 2;
+
+/** The largest advance principal allowed for a given basic salary. */
+export function maxAdvancePrincipal(basicSalary: number): number {
+  return round2(basicSalary * ADVANCE_CAP_MONTHS);
+}
+
+/** True when an advance principal exceeds two months' basic salary. */
+export function advanceExceedsCap(principal: number, basicSalary: number): boolean {
+  return principal > maxAdvancePrincipal(basicSalary);
+}

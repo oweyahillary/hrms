@@ -8,7 +8,8 @@ import type { SalaryComponentDto } from './dto/salary-component.dto';
 interface ComponentRow { componentType: string; name: string; amount: unknown; isTaxable: boolean; }
 interface StructureRow {
   id: string; employeeId: string; basicSalary: unknown;
-  effectiveDate: Date; endDate: Date | null; components: ComponentRow[];
+  effectiveDate: Date; endDate: Date | null; reason: string; approvedById: string | null;
+  components: ComponentRow[];
 }
 
 @Injectable()
@@ -33,6 +34,8 @@ export class SalaryStructuresService {
         basicSalary: dto.basicSalary,
         effectiveDate: effective,
         endDate: dto.endDate ? new Date(dto.endDate) : null,
+        reason: dto.reason,
+        approvedById: dto.approvedById ?? null,
         components: { create: (dto.components ?? []).map(this.toComponentData) },
       } as never,
       include: { components: true },
@@ -114,6 +117,7 @@ export class SalaryStructuresService {
       id: s.id, employeeId: s.employeeId,
       basicSalary: Number(s.basicSalary),
       effectiveDate: s.effectiveDate, endDate: s.endDate,
+      reason: s.reason, approvedById: s.approvedById,
       components: s.components.map((c) => ({
         componentType: c.componentType, name: c.name, amount: Number(c.amount), isTaxable: c.isTaxable,
       })),
