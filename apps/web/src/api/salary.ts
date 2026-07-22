@@ -24,6 +24,8 @@ export interface SalaryStructure {
   basicSalary: number;
   effectiveDate: string;
   endDate: string | null;
+  reason: string;
+  approvedById: string | null;
   components: SalaryComponent[];
   derived: SalaryStructureDerived;
 }
@@ -32,6 +34,8 @@ export interface CreateSalaryStructureInput {
   basicSalary: number;
   effectiveDate: string;
   endDate?: string;
+  reason: string;
+  approvedById?: string;
   components?: SalaryComponent[];
 }
 
