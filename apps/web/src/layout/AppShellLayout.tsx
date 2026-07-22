@@ -72,6 +72,7 @@ const ADMIN_NAV: NavItem[] = [
       { to: '/settings/leave', label: 'Leave approval' },
       { to: '/settings/numbering', label: 'Employee numbers' },
       { to: '/settings/payroll', label: 'Payroll' },
+      { to: '/settings/users', label: 'Users' },
     ],
   },
 ];
