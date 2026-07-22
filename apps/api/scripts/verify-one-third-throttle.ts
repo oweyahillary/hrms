@@ -61,7 +61,29 @@ async function main(): Promise<void> {
     if (!id) throw new Error(`employee create failed for ${tag}`);
     await fetch(`${BASE}/employees/${id}/salary-structures`, {
       method: 'POST', headers: authJson,
-      body: JSON.stringify({ basicSalary: basic, effectiveDate: '2019-01-01' }),
+      body: JSON.stringify({ basicSalary: basic, effectiveDate: '2019-01-01' , reason: 'Salary revision'}),
+    });
+    return id;
+  }
+  // Same as createEmployee but with a standing salary-structure voluntary
+  // deduction (a PROTECTED deduction — counted against the floor but never
+  // throttled by this feature; it's the employee's own standing instruction).
+  async function createEmployeeWithVoluntaryDeduction(tag: string, basic: number, deduction: number): Promise<string> {
+    const res = await fetch(`${BASE}/employees`, {
+      method: 'POST', headers: authJson,
+      body: JSON.stringify({
+        employeeNumber: `${tag}-${stamp}`, firstName: tag, lastName: 'Throttle',
+        nationalId: String(stamp).slice(-7) + String(nid++), employmentType: 'PERMANENT', hireDate: '2019-01-01',
+      }),
+    });
+    const id = ((await res.json()) as { id?: string }).id;
+    if (!id) throw new Error(`employee create failed for ${tag}`);
+    await fetch(`${BASE}/employees/${id}/salary-structures`, {
+      method: 'POST', headers: authJson,
+      body: JSON.stringify({
+        basicSalary: basic, effectiveDate: '2019-01-01', reason: 'Salary revision',
+        components: [{ componentType: 'DEDUCTION_VOLUNTARY', name: 'Standing voluntary deduction', amount: deduction, isTaxable: false }],
+      }),
     });
     return id;
   }
@@ -178,6 +200,33 @@ async function main(): Promise<void> {
   const l3 = await getLoan(loan3);
   check('a withheld installment leaves the loan balance untouched (carried forward)', l3.balance === 5000 && l3.status === 'ACTIVE', `${l3.balance}/${l3.status}`);
   await discard(r3.id!);
+
+  // ── Scenario 4: the breach comes from PROTECTED deductions, not throttleable ──
+  //    ones. A standing salary-structure voluntary deduction (20000), on top of
+  //    statutory, already pushes net below the floor before any loan is applied.
+  //    The throttle must fully defer the throttleable loan (there is no budget for
+  //    it), but it CANNOT reduce a protected deduction — so the breach remains and
+  //    oneThirdRulePass stays FALSE, surfacing it for the officer's finalize
+  //    override rather than silently passing.
+  const e4 = await createEmployeeWithVoluntaryDeduction('OTR4', BASIC, 20000);
+  const loan4 = await createLoan(e4, 5000, 1); // throttleable, but the budget is already negative
+  const r4 = await run(1, 2089, e4);
+  const s4 = r4.payslips?.[0];
+  const rep4 = s4?.loanRepayments?.[0];
+  check('protected-breach: the throttleable loan is fully withheld (amount 0)',
+    rep4 !== undefined && rep4.amount === 0, JSON.stringify(rep4));
+  check('protected-breach: the whole scheduled installment is deferred (nothing forced through)',
+    rep4 !== undefined && rep4.scheduledAmount === 5000 && near(rep4.deferredAmount, 5000), JSON.stringify(rep4));
+  check('protected-breach: only the protected voluntary deduction is applied (no throttleable added on top)',
+    near(s4?.otherDeductions ?? -1, 20000), String(s4?.otherDeductions));
+  check('protected-breach: take-home is BELOW the one-third floor — the throttle cannot fix a protected-deduction breach',
+    (s4?.netPay ?? Infinity) < FLOOR - 0.01, String(s4?.netPay));
+  check('protected-breach: oneThirdRulePass is FALSE — the breach is surfaced, not silently passed',
+    s4?.oneThirdRulePass === false, String(s4?.oneThirdRulePass));
+  const l4 = await getLoan(loan4);
+  check('protected-breach: the withheld loan is untouched and still ACTIVE (nothing lost)',
+    l4.balance === 5000 && l4.status === 'ACTIVE', `${l4.balance}/${l4.status}`);
+  await discard(r4.id!);
 
   console.log(`\n  ${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);

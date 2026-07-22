@@ -69,7 +69,7 @@ async function main(): Promise<void> {
     method: 'POST',
     headers: authJson,
     body: JSON.stringify({
-      basicSalary: 90000, effectiveDate: '2026-01-01',
+      basicSalary: 90000, effectiveDate: '2026-01-01', reason: 'Salary revision',
       components: [{ componentType: 'ALLOWANCE', name: 'House', amount: 15000, isTaxable: true }],
     }),
   });

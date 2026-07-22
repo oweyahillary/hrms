@@ -313,6 +313,7 @@ model User {
   sessions             Session[] // [T1-4]
   createdLoans         Loan[]
   createdAdjustments   PayrollAdjustment[]
+  approvedSalaryRevisions SalaryStructure[] @relation("SalaryRevisionApprover")
 
   // DECISION: email scoped-unique per org, NOT globally unique. Keeps the
   // "multi-tenant is a config flip" promise honest — two tenants could
@@ -663,9 +664,12 @@ model SalaryStructure {
   basicSalary    Decimal   @db.Decimal(12, 2)
   effectiveDate  DateTime  @db.Date // [T1-2]
   endDate        DateTime? @db.Date // [T1-2]
+  reason         String // required — why this revision (matches Loan/PayrollAdjustment.reason)
+  approvedById   String? // optional — approver, when distinct from whoever entered the revision
 
   organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   employee     Employee          @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  approvedBy   User?             @relation("SalaryRevisionApprover", fields: [approvedById], references: [id], onDelete: SetNull)
   components    SalaryComponent[]
 
   @@index([organizationId])
@@ -902,7 +906,7 @@ model Loan {
   balance              Decimal    @db.Decimal(12, 2) // remaining; starts at principal + interest
   status               LoanStatus @default(ACTIVE)
   disbursedDate        DateTime   @db.Date
-  reason               String?
+  reason               String // required (matches PayrollAdjustment.reason)
   createdById          String
   createdAt            DateTime   @default(now())
 

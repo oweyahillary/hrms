@@ -53,7 +53,7 @@ async function main(): Promise<void> {
     if (!id) throw new Error(`employee create failed for ${tag}`);
     await fetch(`${BASE}/employees/${id}/salary-structures`, {
       method: 'POST', headers: authJson,
-      body: JSON.stringify({ basicSalary: 60000, effectiveDate: '2020-01-01' }),
+      body: JSON.stringify({ basicSalary: 60000, effectiveDate: '2020-01-01' , reason: 'Salary revision'}),
     });
     return id;
   }
@@ -122,7 +122,7 @@ async function main(): Promise<void> {
   const emp2 = await createEmployee('LOAN2');
   const loan2Res = await fetch(`${BASE}/employees/${emp2}/loans`, {
     method: 'POST', headers: authJson,
-    body: JSON.stringify({ type: 'ADVANCE', principal: 5000, numberOfInstallments: 1, disbursedDate: '2020-01-01' }),
+    body: JSON.stringify({ type: 'ADVANCE', principal: 5000, numberOfInstallments: 1, disbursedDate: '2020-01-01', reason: 'Staff advance' }),
   });
   const loan2 = (await loan2Res.json()) as { id?: string };
   if (!loan2.id) { console.log('  FAIL  loan2 create'); process.exit(1); }
@@ -140,7 +140,7 @@ async function main(): Promise<void> {
   const emp3 = await createEmployee('LOAN3');
   const loan3Res = await fetch(`${BASE}/employees/${emp3}/loans`, {
     method: 'POST', headers: authJson,
-    body: JSON.stringify({ type: 'LOAN', principal: 1000, interestRate: 10, numberOfInstallments: 3, disbursedDate: '2020-01-01' }),
+    body: JSON.stringify({ type: 'LOAN', principal: 1000, interestRate: 10, numberOfInstallments: 3, disbursedDate: '2020-01-01', reason: 'Emergency loan' }),
   });
   const loan3 = (await loan3Res.json()) as { id?: string; installmentAmount?: number; balance?: number };
   if (!loan3.id) { console.log('  FAIL  loan3 create'); process.exit(1); }
@@ -153,6 +153,31 @@ async function main(): Promise<void> {
   const loan3State = await getLoan(loan3.id);
   check('rounding never leaves a residual balance', loan3State.balance === 0, String(loan3State.balance));
   check('rounding-exhausted loan completes', loan3State.status === 'COMPLETED', loan3State.status);
+
+  // --- Scenario 4: ADVANCE cap boundary (Employment Act §19: two months' basic) ---
+  // createEmployee() always sets basicSalary 60000, so the cap is exactly
+  // 120000. Previously nothing in this file went anywhere near the boundary
+  // (scenario 2's ADVANCE above is principal 5000, far under any real limit)
+  // — advanceExceedsCap's exact-boundary behaviour was unit-tested in
+  // isolation only, never exercised against the live server.
+  const emp4 = await createEmployee('LOAN4');
+  const atCapRes = await fetch(`${BASE}/employees/${emp4}/loans`, {
+    method: 'POST', headers: authJson,
+    body: JSON.stringify({ type: 'ADVANCE', principal: 120000, numberOfInstallments: 2, disbursedDate: '2020-01-01', reason: 'Advance at the cap' }),
+  });
+  const atCap = (await atCapRes.json()) as { id?: string; principal?: number };
+  check('ADVANCE at exactly 2x basic (120000) is accepted', atCapRes.status === 201, String(atCapRes.status));
+  check('the accepted advance persists the full requested principal', atCap.principal === 120000, String(atCap.principal));
+
+  const overCapRes = await fetch(`${BASE}/employees/${emp4}/loans`, {
+    method: 'POST', headers: authJson,
+    body: JSON.stringify({ type: 'ADVANCE', principal: 120000.01, numberOfInstallments: 2, disbursedDate: '2020-01-01', reason: 'One shilling over the cap' }),
+  });
+  const overCap = (await overCapRes.json()) as { message?: string };
+  check('ADVANCE one shilling over the cap (120000.01) is rejected, not silently accepted', overCapRes.status === 400, String(overCapRes.status));
+  check('the rejection names the actual cap and the requested amount (not a generic 400)',
+    typeof overCap.message === 'string' && overCap.message.includes('120000') && overCap.message.includes('120000.01'),
+    overCap.message ?? '');
 
   console.log(`\n  ${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);

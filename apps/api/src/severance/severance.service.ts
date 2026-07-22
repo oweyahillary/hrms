@@ -8,8 +8,9 @@ import { assembleRateSet } from '../payroll/rate-set';
 import { computePayeTax, round2 } from '../payroll/payroll-engine';
 import { pickEffectiveStructure } from '../salary/salary-math';
 import {
-  buildSeveranceComputation, daysPerMonthForBasis,
+  buildSeveranceComputation, daysPerMonthForBasis, classifySeveranceTaxTreatment,
   type ExitReason, type PayFrequency, type SeveranceDayRateBasis,
+  type ContractTermType, type SeveranceTaxSpread,
 } from './severance-math';
 import type { CreateSeveranceDto } from './dto/create-severance.dto';
 
@@ -23,20 +24,20 @@ interface SeveranceRow {
 /**
  * Provisional PAYE treatment of the severance lump sum.
  *
- * ⚠️  UNVERIFIED — DO NOT TRUST FOR A REAL PAYOUT WITHOUT KRA GUIDANCE.
- * Kenyan practice on taxing a severance/redundancy lump sum (spreading the
- * amount back across the years of service, and any exemption threshold) is not
- * settled between the sources we have, so we do NOT hardcode a spreading rule or
- * an exemption number here. As an interim, we tax the FULL gross severance as
- * ordinary taxable income for the exit month using the standard PAYE bands and
- * personal relief only — no spreading, no exemption, and none of the monthly
- * statutory deductions (NSSF/SHIF/AHL), which do not apply to a lump sum. See
- * docs/severance.md. When KRA guidance is confirmed, change it there and here.
+ * ⚠️  PROVISIONAL / UNVERIFIED — the flag reflects that the methodology has not
+ * had a tax firm's sign-off, NOT that the code is missing. The lump sum is now
+ * spread per the KRA three-bucket rule (fixed-term → unexpired term;
+ * unspecified-term with a termination-pay clause → forward at the pre-termination
+ * rate; no provision → evenly over the 3 years after exit) and each monthly slice
+ * is taxed through the ordinary PAYE bands + personal relief — no NSSF/SHIF/AHL,
+ * which don't apply to a lump sum. Once a firm confirms the methodology, flipping
+ * the status to verified is a one-line change here. See docs/severance.md.
  */
 const PAYE_NOTE =
-  'PROVISIONAL / UNVERIFIED: full gross taxed as ordinary income for the exit ' +
-  'month (PAYE bands + personal relief only; no spreading, no exemption, no ' +
-  'NSSF/SHIF/AHL). Requires KRA guidance before a real payout — see docs/severance.md.';
+  'PROVISIONAL / UNVERIFIED: severance lump sum spread per the KRA three-bucket ' +
+  'rule; each monthly slice taxed at ordinary PAYE bands + personal relief (no ' +
+  'NSSF/SHIF/AHL — not applicable to a lump sum). Methodology awaits a tax firm ' +
+  'sign-off before a real payout — see docs/severance.md.';
 
 @Injectable()
 export class SeveranceService {
@@ -86,7 +87,19 @@ export class SeveranceService {
       daysPerMonth,
     });
 
-    breakdown.paye = await this.provisionalPaye(severance.gross, exitDate);
+    // KRA three-bucket spreading of the lump sum for PAYE. Classified from the
+    // contract terms supplied for THIS exit; annual gross approximated as basic
+    // × 12 (allowances aren't loaded in this context — consistent with the
+    // basic-based severance calc, and adequate while this stays provisional).
+    const spread = classifySeveranceTaxTreatment({
+      severanceAmount: severance.gross,
+      contractTermType: dto.contractTermType as ContractTermType,
+      unexpiredTermMonths: dto.unexpiredTermMonths ?? null,
+      annualGross: round2(basicSalary * 12),
+    });
+
+    breakdown.contractTermType = dto.contractTermType;
+    breakdown.paye = await this.provisionalPaye(severance.gross, exitDate, spread);
     breakdown.totals = {
       severanceGross: severance.gross,
       noticePayInLieu: notice.payInLieu,
@@ -128,31 +141,52 @@ export class SeveranceService {
   }
 
   /**
-   * Provisional PAYE on the severance lump sum. Best-effort: if no statutory
-   * rates are in force it degrades to an "unavailable" marker rather than
-   * blocking the (rate-independent) severance entitlement itself.
+   * Provisional PAYE on the severance lump sum, spread per the KRA bucket. Each
+   * equal monthly slice runs through the ordinary PAYE bands + personal relief
+   * (the way a normal month is taxed), instead of taxing the whole lump sum in
+   * one month. Still PROVISIONAL_UNVERIFIED — this is the methodology, not a tax
+   * firm's sign-off. Best-effort: with no statutory rates in force it degrades
+   * to an "unavailable" marker rather than blocking the severance entitlement.
    */
-  private async provisionalPaye(gross: number, asOf: Date): Promise<Record<string, unknown>> {
+  private async provisionalPaye(
+    gross: number, asOf: Date, spread: SeveranceTaxSpread,
+  ): Promise<Record<string, unknown>> {
     if (gross <= 0) {
-      return { status: 'N/A', paye: 0, net: 0, note: 'No severance — no tax.' };
+      return { status: 'N/A', bucket: spread.bucket, paye: 0, net: 0, note: 'No severance — no tax.' };
     }
     try {
       const rateSet = assembleRateSet((await this.rates.effective(asOf.toISOString().slice(0, 10))).rates);
-      const payeBeforeRelief = computePayeTax(gross, rateSet.paye);
-      const paye = round2(Math.max(0, payeBeforeRelief - rateSet.paye.personalRelief));
+      const relief = rateSet.paye.personalRelief;
+      const payePerPeriodBeforeRelief = computePayeTax(spread.amountPerPeriod, rateSet.paye);
+      const payePerPeriod = round2(Math.max(0, payePerPeriodBeforeRelief - relief));
+      const paye = round2(payePerPeriod * spread.periods);
+      // Full per-period breakdown — the audit trail if the methodology is reviewed.
+      const periodBreakdown = Array.from({ length: spread.periods }, (_, i) => ({
+        period: i + 1,
+        taxable: spread.amountPerPeriod,
+        payeBeforeRelief: payePerPeriodBeforeRelief,
+        personalRelief: relief,
+        paye: payePerPeriod,
+      }));
       return {
         status: 'PROVISIONAL_UNVERIFIED',
-        method: 'ordinary-income PAYE bands on full gross; personal relief applied; no spreading/exemption',
+        method: 'KRA three-bucket spreading; each monthly slice taxed through ordinary PAYE bands + personal relief',
+        bucket: spread.bucket,
+        rule: spread.rule,
+        periods: spread.periods,
+        amountPerPeriod: spread.amountPerPeriod,
+        payePerPeriod,
+        personalRelief: relief,
         taxableGross: gross,
-        payeBeforeRelief,
-        personalRelief: rateSet.paye.personalRelief,
         paye,
         net: round2(gross - paye),
+        periodBreakdown,
         note: PAYE_NOTE,
       };
     } catch {
       return {
         status: 'UNAVAILABLE',
+        bucket: spread.bucket,
         paye: null,
         net: null,
         note: `${PAYE_NOTE} (No effective statutory rate found for the exit date — PAYE not computed.)`,

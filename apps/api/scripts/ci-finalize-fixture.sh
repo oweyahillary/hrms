@@ -16,7 +16,7 @@ EID=$(curl -s -X POST "$BASE_URL/employees" -H "Authorization: Bearer $TOKEN" -H
 [ -n "$EID" ] || { echo "fixture: employee create failed"; exit 1; }
 
 curl -s -X POST "$BASE_URL/employees/$EID/salary-structures" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"basicSalary":80000,"effectiveDate":"2026-01-01","components":[{"componentType":"ALLOWANCE","name":"House","amount":20000,"isTaxable":true}]}' >/dev/null
+  -d '{"basicSalary":80000,"effectiveDate":"2026-01-01","reason":"Salary revision","components":[{"componentType":"ALLOWANCE","name":"House","amount":20000,"isTaxable":true}]}' >/dev/null
 
 RID=$(curl -s -X POST "$BASE_URL/payroll/runs" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d "{\"periodMonth\":3,\"periodYear\":2030,\"employeeIds\":[\"$EID\"]}" \

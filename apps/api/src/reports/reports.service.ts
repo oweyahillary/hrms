@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PRISMA, type ExtendedPrismaClient } from '../prisma/prisma.service';
-import { renderRemittancePdf, renderPayrollSummaryPdf } from './reports-document';
+import {
+  renderRemittancePdf, renderPayrollSummaryPdf, renderLoanBookPdf, renderSeveranceRegisterPdf,
+  renderAdjustmentsRegisterPdf,
+} from './reports-document';
+import { buildLoanBook, buildSeveranceRegister, buildAdjustmentsRegister } from './reports-math';
 
 const r2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
@@ -206,5 +210,137 @@ export class ReportsService {
       generatedAt: new Date(),
     });
     return { buffer, filename: `payroll-summary-${year}-${String(month).padStart(2, '0')}.pdf` };
+  }
+
+  private async employeeNames(ids: string[]): Promise<Map<string, { employeeName: string; employeeNumber: string }>> {
+    const uniq = [...new Set(ids)];
+    if (uniq.length === 0) return new Map();
+    const emps = (await this.prisma.employee.findMany({
+      where: { id: { in: uniq } } as never,
+      select: { id: true, firstName: true, lastName: true, employeeNumber: true },
+    } as never)) as unknown as Array<{ id: string; firstName: string; lastName: string; employeeNumber: string }>;
+    return new Map(emps.map((e) => [e.id, { employeeName: `${e.firstName} ${e.lastName}`, employeeNumber: e.employeeNumber }]));
+  }
+
+  /**
+   * Loan book: every loan/advance with principal, balance, installments
+   * remaining and next due amount. totalOutstanding is the active-balance
+   * exposure figure a CFO wants at a glance. Filterable by employee and status.
+   */
+  async loanBook(filter: { employeeId?: string; status?: string } = {}) {
+    const where: Record<string, unknown> = {};
+    if (filter.employeeId) where.employeeId = filter.employeeId;
+    if (filter.status) where.status = filter.status;
+    const loans = (await this.prisma.loan.findMany({
+      where: where as never,
+      orderBy: [{ status: 'asc' }, { disbursedDate: 'desc' }],
+    } as never)) as unknown as Array<{
+      id: string; employeeId: string; type: string; status: string;
+      principal: unknown; balance: unknown; installmentAmount: unknown;
+      disbursedDate: Date; reason: string | null;
+    }>;
+
+    const book = buildLoanBook(loans.map((l) => ({
+      id: l.id, employeeId: l.employeeId, type: l.type, status: l.status,
+      principal: num(l.principal), balance: num(l.balance), installmentAmount: num(l.installmentAmount),
+      disbursedDate: l.disbursedDate.toISOString().slice(0, 10), reason: l.reason,
+    })));
+    const names = await this.employeeNames(book.rows.map((r) => r.employeeId));
+    return {
+      filter: { employeeId: filter.employeeId ?? null, status: filter.status ?? null },
+      rows: book.rows.map((r) => ({ ...r, ...(names.get(r.employeeId) ?? { employeeName: '', employeeNumber: '' }) })),
+      totals: book.totals,
+      generatedAt: new Date(),
+    };
+  }
+
+  /**
+   * Severance register: every severance calculation with years of service,
+   * severance amount, notice pay and PAYE status. PROVISIONAL_UNVERIFIED PAYE
+   * is flagged per row and counted in totals so an auditor can't miss it.
+   */
+  async severanceRegister() {
+    const calcs = (await this.prisma.severanceCalculation.findMany({
+      orderBy: { exitDate: 'desc' },
+    } as never)) as unknown as Array<{
+      id: string; employeeId: string; exitDate: Date; reason: string;
+      severanceAmount: unknown; noticePeriodDays: number; calculationBreakdown: unknown;
+    }>;
+
+    const reg = buildSeveranceRegister(calcs.map((c) => ({
+      id: c.id, employeeId: c.employeeId, exitDate: c.exitDate.toISOString().slice(0, 10),
+      reason: c.reason, severanceAmount: num(c.severanceAmount),
+      noticePeriodDays: c.noticePeriodDays, calculationBreakdown: c.calculationBreakdown,
+    })));
+    const names = await this.employeeNames(reg.rows.map((r) => r.employeeId));
+    return {
+      rows: reg.rows.map((r) => ({ ...r, ...(names.get(r.employeeId) ?? { employeeName: '', employeeNumber: '' }) })),
+      totals: reg.totals,
+      generatedAt: new Date(),
+    };
+  }
+
+  async loanBookPdf(filter: { employeeId?: string; status?: string } = {}): Promise<{ buffer: Buffer; filename: string }> {
+    const d = await this.loanBook(filter);
+    const buffer = await renderLoanBookPdf({
+      employer: await this.employerName(),
+      rows: d.rows, totals: d.totals, filter: d.filter, generatedAt: d.generatedAt,
+    });
+    return { buffer, filename: `loan-book-${new Date().toISOString().slice(0, 10)}.pdf` };
+  }
+
+  async severanceRegisterPdf(): Promise<{ buffer: Buffer; filename: string }> {
+    const d = await this.severanceRegister();
+    const buffer = await renderSeveranceRegisterPdf({
+      employer: await this.employerName(),
+      rows: d.rows, totals: d.totals, generatedAt: d.generatedAt,
+    });
+    return { buffer, filename: `severance-register-${new Date().toISOString().slice(0, 10)}.pdf` };
+  }
+
+  /**
+   * Adjustments register: every bonus/deduction across the organisation — the
+   * org-wide data source for the Deductions page, mirroring the loan book.
+   * Filterable by employee, status and target period (year/month).
+   */
+  async adjustmentsRegister(filter: { employeeId?: string; status?: string; year?: number; month?: number } = {}) {
+    const where: Record<string, unknown> = {};
+    if (filter.employeeId) where.employeeId = filter.employeeId;
+    if (filter.status) where.status = filter.status;
+    if (filter.year) where.targetPeriodYear = filter.year;
+    if (filter.month) where.targetPeriodMonth = filter.month;
+    const adjustments = (await this.prisma.payrollAdjustment.findMany({
+      where: where as never,
+      orderBy: [{ targetPeriodYear: 'desc' }, { targetPeriodMonth: 'desc' }, { createdAt: 'desc' }],
+    } as never)) as unknown as Array<{
+      id: string; employeeId: string; type: string; amount: unknown; isTaxable: boolean;
+      reason: string; targetPeriodMonth: number; targetPeriodYear: number; status: string;
+    }>;
+
+    const register = buildAdjustmentsRegister(adjustments.map((a) => ({
+      id: a.id, employeeId: a.employeeId, type: a.type, amount: num(a.amount), isTaxable: a.isTaxable,
+      reason: a.reason, targetPeriodMonth: a.targetPeriodMonth, targetPeriodYear: a.targetPeriodYear, status: a.status,
+    })));
+    const names = await this.employeeNames(register.rows.map((r) => r.employeeId));
+    return {
+      filter: {
+        employeeId: filter.employeeId ?? null, status: filter.status ?? null,
+        year: filter.year ?? null, month: filter.month ?? null,
+      },
+      rows: register.rows.map((r) => ({ ...r, ...(names.get(r.employeeId) ?? { employeeName: '', employeeNumber: '' }) })),
+      totals: register.totals,
+      generatedAt: new Date(),
+    };
+  }
+
+  async adjustmentsRegisterPdf(
+    filter: { employeeId?: string; status?: string; year?: number; month?: number } = {},
+  ): Promise<{ buffer: Buffer; filename: string }> {
+    const d = await this.adjustmentsRegister(filter);
+    const buffer = await renderAdjustmentsRegisterPdf({
+      employer: await this.employerName(),
+      rows: d.rows, totals: d.totals, filter: d.filter, generatedAt: d.generatedAt,
+    });
+    return { buffer, filename: `adjustments-register-${new Date().toISOString().slice(0, 10)}.pdf` };
   }
 }

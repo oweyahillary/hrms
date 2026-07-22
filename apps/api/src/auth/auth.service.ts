@@ -1,5 +1,6 @@
 import { Inject, Injectable, BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
-import { PRISMA, type ExtendedPrismaClient } from '../prisma/prisma.service';
+import { PRISMA, baseClientOf, type ExtendedPrismaClient } from '../prisma/prisma.service';
+import { getRequestContext } from '../common/context/request-context';
 import { CryptoService } from '../crypto/crypto.service';
 import { PasswordService } from './password.service';
 import { TokensService } from './tokens.service';
@@ -44,16 +45,21 @@ export class AuthService {
    * doesn't grant access on its own.
    */
   async ssoLogin(email: string, meta: SessionMeta) {
-    const user = await this.prisma.user.findFirst({
+    // Unauthenticated identity lookup — the caller's org isn't known yet, so
+    // this must bypass tenant scoping entirely (see `scopeContextToUser`).
+    const user = await baseClientOf(this.prisma).user.findFirst({
       where: { email: email.toLowerCase(), isActive: true },
       include: { role: true },
     });
     if (!user) throw new UnauthorizedException('No active account for this identity');
+    this.scopeContextToUser(user);
     return this.issueSession(user, meta);
   }
 
   async login(email: string, password: string, meta: SessionMeta) {
-    const user = await this.prisma.user.findFirst({
+    // Unauthenticated identity lookup — see `scopeContextToUser` for why this
+    // must bypass tenant scoping rather than rely on the pre-auth context.
+    const user = await baseClientOf(this.prisma).user.findFirst({
       where: { email: email.toLowerCase(), isActive: true },
       include: { role: true },
     });
@@ -66,6 +72,10 @@ export class AuthService {
     if (!(await this.passwords.verify(password, user.passwordHash))) {
       throw new UnauthorizedException('Invalid credentials');
     }
+    // Now that we know who's authenticating, scope the rest of this request to
+    // THEIR real org before any further reads/writes (e.g. issueSession's
+    // lastLoginAt update) touch the tenant-scoped extension.
+    this.scopeContextToUser(user);
     // MFA gate: a correct password alone is not a session when MFA is on.
     if (user.mfaEnabled) {
       return { mfaRequired: true, mfaToken: await this.tokens.signMfaChallenge(user.id) };
@@ -81,13 +91,16 @@ export class AuthService {
     } catch {
       throw new UnauthorizedException('Invalid or expired MFA challenge');
     }
-    const user = await this.prisma.user.findFirst({
+    // Still unauthenticated (the MFA challenge JWT proves a password was
+    // verified, not which org) — same bypass as login()/ssoLogin().
+    const user = await baseClientOf(this.prisma).user.findFirst({
       where: { id: userId, isActive: true },
       include: { role: true },
     });
     if (!user || !user.mfaEnabled || !user.mfaSecret) {
       throw new UnauthorizedException('Invalid MFA state');
     }
+    this.scopeContextToUser(user);
 
     const secret = await this.crypto.decrypt(user.mfaSecret);
     if (totpValid(secret, code)) {
@@ -165,15 +178,19 @@ export class AuthService {
 
   async refresh(refreshToken: string, meta: SessionMeta) {
     const hash = this.tokens.hashRefreshToken(refreshToken);
+    // Session isn't tenant-scoped (it's reached via userId, not organizationId),
+    // so this lookup is unaffected either way. The User lookup below IS
+    // tenant-scoped and, like login(), runs before any org is known.
     const session = await this.prisma.session.findUnique({ where: { refreshTokenHash: hash } });
     if (!session || session.revokedAt || session.expiresAt < new Date()) {
       throw new UnauthorizedException('Invalid refresh token');
     }
-    const user = await this.prisma.user.findFirst({
+    const user = await baseClientOf(this.prisma).user.findFirst({
       where: { id: session.userId, isActive: true },
       include: { role: true },
     });
     if (!user) throw new UnauthorizedException('Invalid refresh token');
+    this.scopeContextToUser(user);
 
     // Rotate: revoke the used refresh token, issue a fresh session.
     await this.prisma.session.update({ where: { id: session.id }, data: { revokedAt: new Date() } });
@@ -243,6 +260,29 @@ export class AuthService {
       });
     }
     return { success: true };
+  }
+
+  /**
+   * Scope the REST of this request to a just-resolved user's real org, once an
+   * unauthenticated flow (login/SSO/MFA/refresh) has established who they are.
+   *
+   * Pre-auth, RequestContextMiddleware seeds ctx.organizationId from
+   * DEV_ORG_ID — server-config scaffolding for local dev, not a trustworthy
+   * tenant boundary. If left in place, it does double damage: the identity
+   * lookup itself gets tenant-filtered by a value that has nothing to do with
+   * the credential being checked (a stale DEV_ORG_ID silently turns a correct
+   * password into "Invalid credentials"), and — even once that lookup bypasses
+   * scoping — any write later in the same request (e.g. issueSession's
+   * lastLoginAt update) still gets its before-state read tenant-filtered by
+   * the same stale value and fails closed with a cross-tenant P2025.
+   *
+   * The fix in both cases is the same: once the user row is resolved (via the
+   * unscoped base client), overwrite ctx.organizationId with THEIR real
+   * organizationId — exactly what JwtAuthGuard does post-auth for every other
+   * route — so DEV_ORG_ID never gets a vote once a real identity is known.
+   */
+  private scopeContextToUser(user: { organizationId: string }): void {
+    getRequestContext().organizationId = user.organizationId;
   }
 
   private async issueSession(
