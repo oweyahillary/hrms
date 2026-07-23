@@ -268,6 +268,8 @@ model Organization {
   leaveTypes            LeaveType[]
   leaveBalances         LeaveBalance[]
   leaveRequests         LeaveRequest[]
+  shiftDefinitions      ShiftDefinition[]
+  shiftAssignments      ShiftAssignment[]
   salaryStructures      SalaryStructure[]
   retentionPolicies     RetentionPolicy[]
   breachIncidents       BreachIncident[]
@@ -481,6 +483,7 @@ model Employee {
   attendanceRecords     AttendanceRecord[]
   leaveBalances         LeaveBalance[]
   leaveRequests         LeaveRequest[]
+  shiftAssignments      ShiftAssignment[]
   salaryStructures      SalaryStructure[]
   payslips              Payslip[]
   consentRecords        ConsentRecord[]
@@ -556,6 +559,64 @@ model AttendanceRecord {
   @@index([organizationId])
   @@index([employeeId, date])
   @@map("attendance_records")
+}
+
+enum ShiftAssignmentSource {
+  MANUAL
+  IMPORT
+}
+
+/// Org-configurable shift patterns — never hardcoded (same philosophy as
+/// StatutoryRate: data, not code). Seeded with Kenyan-default shifts on org
+/// provisioning (scripts/seed.ts); HR can add/edit/deactivate from there.
+/// startTime/endTime are "HH:MM" time-of-day strings, not DateTimes — a
+/// shift definition is a repeating daily pattern with no calendar date of
+/// its own. crossesMidnight and isNightShift are independent flags (a shift
+/// can cross midnight without being labelled the night shift), though in
+/// the seeded defaults only Night sets both.
+model ShiftDefinition {
+  id              String   @id @default(uuid())
+  organizationId  String
+  code            String // short, e.g. "M", "A", "N", "G" — unique per org
+  name            String
+  startTime       String
+  endTime         String
+  crossesMidnight Boolean  @default(false)
+  isNightShift    Boolean  @default(false)
+  breakMinutes    Int      @default(0)
+  active          Boolean  @default(true)
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  assignments  ShiftAssignment[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("shift_definitions")
+}
+
+/// One shift per employee per day — application-level upsert on
+/// (employeeId, date) conflict, same pattern as AttendanceRecord. A shift
+/// with crossesMidnight=true belongs to the date it STARTS, never the date
+/// it ends on, so a night shift starting the 5th and ending the 6th is one
+/// row dated the 5th.
+model ShiftAssignment {
+  id                String                @id @default(uuid())
+  organizationId    String
+  employeeId        String
+  date              DateTime              @db.Date // [T1-2] the shift's start date
+  shiftDefinitionId String
+  source            ShiftAssignmentSource @default(MANUAL)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt // [T2]
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee        Employee        @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  shiftDefinition ShiftDefinition @relation(fields: [shiftDefinitionId], references: [id], onDelete: Restrict)
+
+  @@unique([employeeId, date])
+  @@index([organizationId])
+  @@index([organizationId, date])
+  @@map("shift_assignments")
 }
 
 enum LeaveAccrualMethod {

@@ -46,6 +46,23 @@ async function main() {
     });
   }
 
+  // Default Kenyan shift patterns — data, not code (same philosophy as
+  // StatutoryRate), so every org starts with something usable and can edit
+  // freely from there. Idempotent per (organizationId, code), like the rest
+  // of this script.
+  const DEFAULT_SHIFTS = [
+    { code: 'G', name: 'General', startTime: '08:00', endTime: '17:00', crossesMidnight: false, isNightShift: false, breakMinutes: 60 },
+    { code: 'M', name: 'Morning', startTime: '06:00', endTime: '14:00', crossesMidnight: false, isNightShift: false, breakMinutes: 30 },
+    { code: 'A', name: 'Afternoon', startTime: '14:00', endTime: '22:00', crossesMidnight: false, isNightShift: false, breakMinutes: 30 },
+    { code: 'N', name: 'Night', startTime: '22:00', endTime: '06:00', crossesMidnight: true, isNightShift: true, breakMinutes: 30 },
+  ];
+  for (const shift of DEFAULT_SHIFTS) {
+    const existingShift = await prisma.shiftDefinition.findFirst({ where: { organizationId: org.id, code: shift.code } });
+    if (!existingShift) {
+      await prisma.shiftDefinition.create({ data: { organizationId: org.id, ...shift } });
+    }
+  }
+
   console.log('\n--- Seed complete ---');
   console.log('Organization ID :', org.id);
   console.log('Admin email     :', email);

@@ -12,6 +12,7 @@ import { JobTitlesModule } from './job-titles/job-titles.module';
 import { LeaveModule } from './leave/leave.module';
 import { PublicHolidaysModule } from './public-holidays/public-holidays.module';
 import { AttendanceModule } from './attendance/attendance.module';
+import { ShiftsModule } from './shifts/shifts.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { SeveranceModule } from './severance/severance.module';
 import { LoansModule } from './loans/loans.module';
@@ -44,6 +45,7 @@ import { HealthModule } from './health/health.module';
     LeaveModule,
     PublicHolidaysModule,
     AttendanceModule,
+    ShiftsModule,
     PayrollModule,
     SeveranceModule,
     LoansModule,

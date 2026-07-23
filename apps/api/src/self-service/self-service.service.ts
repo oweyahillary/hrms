@@ -4,6 +4,7 @@ import { CryptoService } from '../crypto/crypto.service';
 import { PayslipPdfService } from '../payroll/payslip-pdf.service';
 import { LeaveRequestsService } from '../leave/leave-requests.service';
 import { LeaveBalancesService } from '../leave/leave-balances.service';
+import { ShiftRosterService } from '../shifts/shift-roster.service';
 import type { AuthUser } from '../auth/decorators/current-user.decorator';
 
 interface EmployeeRow {
@@ -37,6 +38,7 @@ export class SelfServiceService {
     private readonly payslipPdf: PayslipPdfService,
     private readonly leaveRequests: LeaveRequestsService,
     private readonly leaveBalances: LeaveBalancesService,
+    private readonly shiftRoster: ShiftRosterService,
   ) {}
 
   async getProfile(userId: string) {
@@ -154,6 +156,11 @@ export class SelfServiceService {
       this.leaveBalances.listForEmployee(employeeId),
     ]);
     return { requests, balances };
+  }
+
+  async getShifts(userId: string, from: string, to: string) {
+    const employeeId = await this.resolveEmployeeId(userId);
+    return this.shiftRoster.getEmployeeRoster(employeeId, from, to);
   }
 
   /** Resolve the caller's own Employee id from their User row. Never trust a client-supplied id. */

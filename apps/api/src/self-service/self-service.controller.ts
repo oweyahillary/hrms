@@ -1,4 +1,4 @@
-import { Controller, Get, Param, StreamableFile } from '@nestjs/common';
+import { Controller, Get, Param, Query, StreamableFile } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { SelfServiceService } from './self-service.service';
 import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.decorator';
@@ -38,5 +38,10 @@ export class SelfServiceController {
   @Get('leave')
   leave(@CurrentUser() user: AuthUser) {
     return this.selfService.getLeave(user.userId, user);
+  }
+
+  @Get('shifts')
+  shifts(@CurrentUser() user: AuthUser, @Query('from') from: string, @Query('to') to: string) {
+    return this.selfService.getShifts(user.userId, from, to);
   }
 }
