@@ -10,6 +10,7 @@ import { getMyProfile, type MyProfile } from '../api/self-service';
 import {
   getDepartments, getJobTitles, departmentMap, jobTitleMap,
 } from '../api/lookups';
+import { ErrorCard } from '../components/ErrorCard';
 
 const STATUS_COLOR: Record<string, string> = {
   ACTIVE: 'brand', ON_LEAVE: 'amber', SUSPENDED: 'red', EXITED: 'sand',
@@ -97,9 +98,11 @@ export function MyProfilePage() {
   const [titleNames, setTitleNames] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setError(null);
     void (async () => {
       try {
         const [me, depts, titles] = await Promise.all([
@@ -114,7 +117,7 @@ export function MyProfilePage() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [reloadKey]);
 
   const sensitive = useMemo(() => {
     if (!profile) return { nationalId: '—', kraPin: '—', bankAccountNumber: '—' };
@@ -130,7 +133,7 @@ export function MyProfilePage() {
     return (
       <Stack gap="lg">
         <Title order={1}>My Profile</Title>
-        <Card p="lg" radius="md"><Text size="sm" c="red">{error}</Text></Card>
+        <ErrorCard message={error} onRetry={() => setReloadKey((k) => k + 1)} />
       </Stack>
     );
   }

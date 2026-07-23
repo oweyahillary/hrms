@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Badge, Box, Card, Grid, Group, Skeleton, Stack, Text, Title, ThemeIcon,
 } from '@mantine/core';
@@ -7,6 +7,7 @@ import {
   IconSparkles,
 } from '@tabler/icons-react';
 import { getYearTrend, getHeadcount, getLeaveInboxCount, type TrendMonth } from '../api/reports';
+import { ErrorCard } from '../components/ErrorCard';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -45,46 +46,43 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(false);
     const now = new Date();
     const year = now.getUTCFullYear();
     const month = now.getUTCMonth() + 1;
+    try {
+      const [trend, hc, pending] = await Promise.all([
+        getYearTrend(year), getHeadcount(), getLeaveInboxCount(),
+      ]);
 
-    async function load() {
-      try {
-        const [trend, hc, pending] = await Promise.all([
-          getYearTrend(year), getHeadcount(), getLeaveInboxCount(),
-        ]);
-        if (cancelled) return;
+      const upToNow = trend.months.filter((m) => m.month <= month);
+      const withData = upToNow.filter((m) => m.grossPay > 0);
+      const shown: TrendMonth | undefined = withData[withData.length - 1] ?? upToNow[upToNow.length - 1];
+      const prev = withData.length >= 2 ? withData[withData.length - 2] : undefined;
+      const pctChange = shown && prev && prev.grossPay > 0
+        ? ((shown.grossPay - prev.grossPay) / prev.grossPay) * 100
+        : null;
 
-        const upToNow = trend.months.filter((m) => m.month <= month);
-        const withData = upToNow.filter((m) => m.grossPay > 0);
-        const shown: TrendMonth | undefined = withData[withData.length - 1] ?? upToNow[upToNow.length - 1];
-        const prev = withData.length >= 2 ? withData[withData.length - 2] : undefined;
-        const pctChange = shown && prev && prev.grossPay > 0
-          ? ((shown.grossPay - prev.grossPay) / prev.grossPay) * 100
-          : null;
-
-        setData({
-          shownMonth: shown?.month ?? month,
-          shownYear: year,
-          grossPay: shown?.grossPay ?? 0,
-          pctChange,
-          series: upToNow.map((m) => m.grossPay),
-          active: hc.active ?? hc.byStatus?.ACTIVE ?? 0,
-          onLeave: hc.byStatus?.ON_LEAVE ?? 0,
-          pending,
-        });
-      } catch {
-        if (!cancelled) setError(true);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      setData({
+        shownMonth: shown?.month ?? month,
+        shownYear: year,
+        grossPay: shown?.grossPay ?? 0,
+        pctChange,
+        series: upToNow.map((m) => m.grossPay),
+        active: hc.active ?? hc.byStatus?.ACTIVE ?? 0,
+        onLeave: hc.byStatus?.ON_LEAVE ?? 0,
+        pending,
+      });
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
     }
-    void load();
-    return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => { void load(); }, [load]);
 
   const stats = [
     { label: 'Headcount', value: data ? String(data.active) : '—', icon: IconUsers, color: 'brand' },
@@ -99,12 +97,10 @@ export function DashboardPage() {
         <Text c="sand.6" mt={4}>Your workspace at a glance</Text>
       </div>
 
-      {error && (
-        <Card p="md" radius="md">
-          <Text c="sand.6" size="sm">Some metrics could not load. They need finalized payroll and HR access.</Text>
-        </Card>
-      )}
-
+      {error ? (
+        <ErrorCard message="Your dashboard metrics could not load. Check your connection and try again." onRetry={() => void load()} retrying={loading} />
+      ) : (
+      <>
       <Grid gutter="md">
         <Grid.Col span={{ base: 12, md: 7 }}>
           <Card p="lg" radius="md" h="100%">
@@ -176,6 +172,8 @@ export function DashboardPage() {
           </Box>
         </Group>
       </Card>
+      </>
+      )}
     </Stack>
   );
 }

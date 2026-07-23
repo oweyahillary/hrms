@@ -8,6 +8,7 @@ import { listPayrollRuns, type PayrollRunListItem, type PayrollRunStatus, type P
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { canManageEmployees } from '../auth/roles';
+import { ErrorCard } from '../components/ErrorCard';
 
 const STATUS_COLOR: Record<PayrollRunStatus, string> = {
   DRAFT: 'amber', PROCESSING: 'amber', FINALIZED: 'brand', PAID: 'sand',
@@ -37,10 +38,12 @@ export function PayrollRunsPage() {
   const [runs, setRuns] = useState<PayrollRunListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!allowed) { setLoading(false); return; }
     let cancelled = false;
+    setLoading(true);
     void (async () => {
       try {
         const rows = await listPayrollRuns();
@@ -55,7 +58,7 @@ export function PayrollRunsPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [allowed]);
+  }, [allowed, reloadKey]);
 
   return (
     <Stack gap="lg">
@@ -71,7 +74,7 @@ export function PayrollRunsPage() {
 
       <Card p="lg" radius="md">
         {error ? (
-          <Center py={48}><Text size="sm" c="sand.7" maw={420} ta="center">{error}</Text></Center>
+          <ErrorCard message={error} onRetry={() => setReloadKey((k) => k + 1)} retrying={loading} />
         ) : (
           <>
             <Table.ScrollContainer minWidth={640}>

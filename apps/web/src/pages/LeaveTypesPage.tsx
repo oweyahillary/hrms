@@ -13,6 +13,7 @@ import {
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { canManageEmployees } from '../auth/roles';
+import { ErrorCard } from '../components/ErrorCard';
 
 const ACCRUAL_OPTIONS = [
   { value: 'NONE', label: "Doesn't accrue — set by hand" },
@@ -43,6 +44,7 @@ export function LeaveTypesPage() {
 
   const [types, setTypes] = useState<LeaveType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<LeaveType | null>(null);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -63,10 +65,12 @@ export function LeaveTypesPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       setTypes(await getLeaveTypes());
     } catch {
       setTypes([]);
+      setError('Leave types could not load. Check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -158,7 +162,9 @@ export function LeaveTypesPage() {
       </Group>
 
       <Card p="lg" radius="md">
-        <Table.ScrollContainer minWidth={640}>
+        {error && <ErrorCard message={error} onRetry={() => void load()} retrying={loading} />}
+
+        {!error && <><Table.ScrollContainer minWidth={640}>
           <Table verticalSpacing="sm" horizontalSpacing="md">
             <Table.Thead>
               <Table.Tr>
@@ -208,7 +214,7 @@ export function LeaveTypesPage() {
               </Text>
             </Stack>
           </Center>
-        )}
+        )}</>}
       </Card>
 
       <Modal

@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Badge, Button, Card, Center, Skeleton, Stack, Table, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconAlertTriangle, IconDownload, IconReceiptOff } from '@tabler/icons-react';
 import { getMyPayslips, downloadMyPayslipPdf, type MyPayslip } from '../api/self-service';
 import { ApiError } from '../api/client';
+import { ErrorCard } from '../components/ErrorCard';
 
 const kes = (n: number): string =>
   n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -20,18 +21,17 @@ export function MyPayslipsPage() {
   const [error, setError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const data = await getMyPayslips();
-        if (!cancelled) setRows(data);
-      } catch {
-        if (!cancelled) { setRows([]); setError('Could not load your payslips. Please try again.'); }
-      }
-    })();
-    return () => { cancelled = true; };
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      setRows(await getMyPayslips());
+    } catch {
+      setRows([]);
+      setError('Could not load your payslips. Please try again.');
+    }
   }, []);
+
+  useEffect(() => { void load(); }, [load]);
 
   const download = async (id: string) => {
     setDownloadingId(id);
@@ -56,9 +56,9 @@ export function MyPayslipsPage() {
       </div>
 
       <Card p="lg" radius="md">
-        {error && <Text size="sm" c="red" mb="sm">{error}</Text>}
+        {error && <ErrorCard message={error} onRetry={() => void load()} retrying={rows === null} />}
 
-        <Table.ScrollContainer minWidth={520}>
+        {!error && <><Table.ScrollContainer minWidth={520}>
           <Table verticalSpacing="sm" horizontalSpacing="md">
             <Table.Thead>
               <Table.Tr>
@@ -109,7 +109,7 @@ export function MyPayslipsPage() {
               </Text>
             </Stack>
           </Center>
-        )}
+        )}</>}
       </Card>
     </Stack>
   );

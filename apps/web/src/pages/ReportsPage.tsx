@@ -14,6 +14,7 @@ import {
 import { loadEmployeeOptions, type EmployeeOption } from '../api/employee-options';
 import { BUCKET_LABEL } from '../api/severance';
 import { ApiError } from '../api/client';
+import { ErrorCard } from '../components/ErrorCard';
 
 const kes = (n: number): string =>
   n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -162,16 +163,16 @@ export function ReportsPage() {
           </Group>
         </Group>
 
-        {sevError && <Alert color="red" variant="light" icon={<IconAlertTriangle size={16} />}>{sevError}</Alert>}
+        {sevError && <ErrorCard message={sevError} onRetry={() => void loadSeverance()} retrying={sevLoading} />}
 
-        {sev && sev.totals.provisionalCount > 0 && (
+        {!sevError && sev && sev.totals.provisionalCount > 0 && (
           <Alert color="red" variant="light" icon={<IconAlertTriangle size={16} />} title="Unverified PAYE figures" mb="sm">
             {sev.totals.provisionalCount} of {sev.totals.count} record(s) carry a <b>provisional, unverified</b> PAYE
             figure. Severance lump-sum tax treatment is not confirmed — do not rely on these PAYE amounts without KRA guidance.
           </Alert>
         )}
 
-        <Divider my="sm" />
+        {!sevError && <><Divider my="sm" />
 
         <Table verticalSpacing="sm">
           <Table.Thead>
@@ -213,7 +214,7 @@ export function ReportsPage() {
               </Table.Tr>
             ))}
           </Table.Tbody>
-        </Table>
+        </Table></>}
       </Card>
     </Stack>
   );

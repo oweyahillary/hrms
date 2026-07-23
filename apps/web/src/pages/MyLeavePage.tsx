@@ -10,6 +10,7 @@ import {
 import { getMyLeave } from '../api/self-service';
 import { cancelLeave, type LeaveBalance, type LeaveRequest } from '../api/leave';
 import { ApiError } from '../api/client';
+import { ErrorCard } from '../components/ErrorCard';
 
 const STATUS_COLOR: Record<string, string> = {
   PENDING: 'amber', APPROVED: 'brand', REJECTED: 'red', CANCELLED: 'sand',
@@ -136,7 +137,7 @@ export function MyLeavePage() {
         <Text fw={600} mb="md">My requests</Text>
 
         {error ? (
-          <Center py={48}><Text size="sm" c="sand.7" maw={420} ta="center">{error}</Text></Center>
+          <ErrorCard message={error} onRetry={() => void load()} retrying={requests === null} />
         ) : (
           <>
             <Table.ScrollContainer minWidth={520}>

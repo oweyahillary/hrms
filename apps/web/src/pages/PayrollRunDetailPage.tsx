@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import {
-  Alert, Anchor, Badge, Button, Card, Center, Grid, Group, List, Modal, MultiSelect, ActionIcon,
+  Alert, Anchor, Badge, Button, Card, Grid, Group, List, Modal, MultiSelect, ActionIcon,
   Select, Skeleton, Stack, Switch, Table, Text, ThemeIcon, Title, Tooltip,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
@@ -20,6 +20,7 @@ import { listEmployees } from '../api/employees';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { canManageEmployees } from '../auth/roles';
+import { ErrorCard } from '../components/ErrorCard';
 
 const STATUS_COLOR: Record<PayrollRunStatus, string> = {
   DRAFT: 'amber', PROCESSING: 'amber', FINALIZED: 'brand', PAID: 'sand',
@@ -120,6 +121,7 @@ export function PayrollRunDetailPage() {
   const [run, setRun] = useState<PayrollRunDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [empMap, setEmpMap] = useState<Map<string, EmpInfo>>(new Map());
 
   // Only present on the initial navigation right after creation — not something
@@ -182,7 +184,7 @@ export function PayrollRunDetailPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [id, allowed]);
+  }, [id, allowed, reloadKey]);
 
   const loadBankExports = useCallback(async (runId: string) => {
     setBankLoading(true);
@@ -351,15 +353,10 @@ export function PayrollRunDetailPage() {
     return (
       <Stack gap="lg">
         {back}
-        <Card p="xl" radius="md">
-          <Center py={32}>
-            <Stack gap={8} align="center">
-              <Text fw={600}>Run unavailable</Text>
-              <Text size="sm" c="sand.6" maw={420} ta="center">{error}</Text>
-              <Button component={Link} to="/payroll" variant="light" mt="sm">Back to payroll</Button>
-            </Stack>
-          </Center>
-        </Card>
+        <ErrorCard
+          message={error ?? 'That payroll run does not exist, or is not part of this organisation.'}
+          onRetry={() => setReloadKey((k) => k + 1)} retrying={loading}
+        />
       </Stack>
     );
   }

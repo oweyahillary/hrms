@@ -18,6 +18,7 @@ import {
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { canManageEmployees } from '../auth/roles';
+import { ErrorCard } from '../components/ErrorCard';
 
 const PAGE_SIZE = 25;
 
@@ -113,6 +114,7 @@ export function EmployeesPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const [departments, setDepartments] = useState<Option[]>([]);
   const [deptNames, setDeptNames] = useState<Map<string, string>>(new Map());
@@ -189,7 +191,7 @@ export function EmployeesPage() {
         if (id === reqId.current) setLoading(false);
       }
     })();
-  }, [page, urlQ, status, departmentId, sort, order]);
+  }, [page, urlQ, status, departmentId, sort, order, reloadKey]);
 
   const toggleSort = useCallback((key: EmployeeSort) => {
     const nextOrder: SortOrder = sort === key && order === 'asc' ? 'desc' : 'asc';
@@ -340,9 +342,7 @@ export function EmployeesPage() {
         </Group>
 
         {error ? (
-          <Center py={48}>
-            <Text size="sm" c="sand.7" maw={420} ta="center">{error}</Text>
-          </Center>
+          <ErrorCard message={error} onRetry={() => setReloadKey((k) => k + 1)} retrying={loading} />
         ) : (
           <>
             <Table.ScrollContainer minWidth={520}>

@@ -14,6 +14,7 @@ import { Link } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { canManageEmployees } from '../auth/roles';
+import { ErrorCard } from '../components/ErrorCard';
 
 const STATUS_COLOR: Record<string, string> = {
   PENDING: 'amber', APPROVED: 'brand', REJECTED: 'red', CANCELLED: 'sand',
@@ -233,7 +234,7 @@ export function LeavePage() {
         </Group>
 
         {error ? (
-          <Center py={48}><Text size="sm" c="sand.7" maw={420} ta="center">{error}</Text></Center>
+          <ErrorCard message={error} onRetry={() => void load()} retrying={loading} />
         ) : (
           <>
             <Table.ScrollContainer minWidth={560}>
