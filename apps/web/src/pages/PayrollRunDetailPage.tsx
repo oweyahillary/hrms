@@ -6,8 +6,9 @@ import {
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
-  IconAlertTriangle, IconArrowLeft, IconBuildingBank, IconCheck, IconCoin, IconDownload,
-  IconFileInvoice, IconReceipt2, IconRefresh, IconRotateClockwise, IconTrash, IconWallet,
+  IconAlertTriangle, IconArrowLeft, IconBriefcase, IconBuildingBank, IconCheck, IconCoin,
+  IconDownload, IconFileInvoice, IconReceipt2, IconRefresh, IconRotateClockwise, IconTrash,
+  IconUsers, IconWallet,
 } from '@tabler/icons-react';
 import type { Icon } from '@tabler/icons-react';
 import {
@@ -361,6 +362,15 @@ export function PayrollRunDetailPage() {
   const hasFailures = run.oneThirdFailureEmployeeIds.length > 0;
   const pdfsOutstanding = run.pdfStatus.total - run.pdfStatus.ready;
 
+  // "Total deductions" by identity (gross − net) rather than summing every
+  // deduction column by name — correct even if a new deduction type is added
+  // later without this page being updated. "Employer cost" is what totals.*
+  // doesn't carry at all: gross plus the employer's OWN NSSF/AHL contributions
+  // (nssfEmployer/ahlEmployer are per-payslip, not aggregated server-side).
+  const totalDeductions = run.totals.gross - run.totals.net;
+  const employerCost = run.totals.gross
+    + run.payslips.reduce((s, p) => s + p.nssfEmployer + p.ahlEmployer, 0);
+
   // Loan installments this run reduced/withheld to protect the one-third floor.
   const throttledRepayments = run.payslips
     .flatMap((p) => p.loanRepayments.filter((r) => r.deferredAmount > 0).map((r) => ({ employeeId: p.employeeId, ...r })));
@@ -391,7 +401,10 @@ export function PayrollRunDetailPage() {
         <Group gap="sm">
           {run.status === 'DRAFT' && (
             <>
-              <Button variant="light" color="red" leftSection={<IconTrash size={16} />} onClick={() => { setDiscardError(null); setDiscardOpen(true); }}>
+              {/* Finalize is the single primary action for a draft run — Discard
+                  is destructive and secondary, so it stays quiet (subtle, not
+                  filled) even though it's still one click away. */}
+              <Button variant="subtle" color="red" leftSection={<IconTrash size={16} />} onClick={() => { setDiscardError(null); setDiscardOpen(true); }}>
                 Discard
               </Button>
               <Button leftSection={<IconCheck size={16} />} onClick={() => setFinalizeOpen(true)}>
@@ -457,13 +470,17 @@ export function PayrollRunDetailPage() {
         </Alert>
       )}
 
+      {/* The summary strip — five figures, in the order a reader actually asks
+          them: how many people, how much did we pay out, how much was held
+          back, what lands in pockets, what did this actually cost the
+          business. The per-statutory-line breakdown (PAYE/NSSF/SHIF/AHL)
+          lives in the table below now, not duplicated up here. */}
       <Grid gutter="md">
-        <Grid.Col span={{ base: 6, sm: 4, lg: 2 }}><StatTile label="Gross" value={kes(run.totals.gross)} icon={IconCoin} color="brand" /></Grid.Col>
-        <Grid.Col span={{ base: 6, sm: 4, lg: 2 }}><StatTile label="PAYE" value={kes(run.totals.paye)} icon={IconReceipt2} color="sand" /></Grid.Col>
-        <Grid.Col span={{ base: 6, sm: 4, lg: 2 }}><StatTile label="NSSF" value={kes(run.totals.nssf)} icon={IconReceipt2} color="sand" /></Grid.Col>
-        <Grid.Col span={{ base: 6, sm: 4, lg: 2 }}><StatTile label="SHIF" value={kes(run.totals.shif)} icon={IconReceipt2} color="sand" /></Grid.Col>
-        <Grid.Col span={{ base: 6, sm: 4, lg: 2 }}><StatTile label="AHL" value={kes(run.totals.ahl)} icon={IconReceipt2} color="sand" /></Grid.Col>
-        <Grid.Col span={{ base: 6, sm: 4, lg: 2 }}><StatTile label="Net" value={kes(run.totals.net)} icon={IconWallet} color="brand" /></Grid.Col>
+        <Grid.Col span={{ base: 6, sm: 4, lg: 2.4 }}><StatTile label="Headcount" value={String(run.payslipCount)} icon={IconUsers} color="sand" /></Grid.Col>
+        <Grid.Col span={{ base: 6, sm: 4, lg: 2.4 }}><StatTile label="Gross" value={kes(run.totals.gross)} icon={IconCoin} color="brand" /></Grid.Col>
+        <Grid.Col span={{ base: 6, sm: 4, lg: 2.4 }}><StatTile label="Total deductions" value={kes(totalDeductions)} icon={IconReceipt2} color="sand" /></Grid.Col>
+        <Grid.Col span={{ base: 6, sm: 4, lg: 2.4 }}><StatTile label="Net" value={kes(run.totals.net)} icon={IconWallet} color="brand" /></Grid.Col>
+        <Grid.Col span={{ base: 6, sm: 4, lg: 2.4 }}><StatTile label="Employer cost" value={kes(employerCost)} icon={IconBriefcase} color="sand" /></Grid.Col>
       </Grid>
 
       {run.status === 'FINALIZED' && (
@@ -556,21 +573,37 @@ export function PayrollRunDetailPage() {
         <Table.ScrollContainer minWidth={960}>
           <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover>
             <Table.Thead>
+              {/* Two-row header: a spanning group label distinguishes the four
+                  statutory (mandatory, government-set) columns from the single
+                  voluntary column (loan repayments + one-off deductions —
+                  negotiated/elected, not statutory), so the eye can separate
+                  "the law requires this" from "this person agreed to this"
+                  without reading every column name. */}
               <Table.Tr>
-                <Table.Th>Employee</Table.Th>
-                <Table.Th>Gross</Table.Th>
-                <Table.Th>PAYE</Table.Th>
-                <Table.Th>NSSF</Table.Th>
-                <Table.Th>SHIF</Table.Th>
-                <Table.Th>AHL</Table.Th>
-                <Table.Th>Other ded.</Table.Th>
-                <Table.Th>Net</Table.Th>
+                <Table.Th rowSpan={2}>Employee</Table.Th>
+                <Table.Th rowSpan={2}>Gross</Table.Th>
+                <Table.Th
+                  colSpan={4} ta="center"
+                  style={{ borderLeft: '1px solid var(--mantine-color-sand-2)', borderBottom: 'none' }}
+                >
+                  Statutory
+                </Table.Th>
+                <Table.Th rowSpan={2} style={{ borderLeft: '1px solid var(--mantine-color-sand-2)' }}>
+                  Voluntary
+                </Table.Th>
+                <Table.Th rowSpan={2}>Net</Table.Th>
                 {/* Fixed, non-wrapping widths: a short two-word header ("1/3
                     rule") would otherwise wrap onto two lines and shrink the
                     column below the badge it's meant to hold, truncating
                     "Pass"/"Fails" to "P…"/"F…". */}
-                <Table.Th w={90} style={{ whiteSpace: 'nowrap' }}>1/3 rule</Table.Th>
-                <Table.Th w={90} style={{ whiteSpace: 'nowrap' }}>PDF</Table.Th>
+                <Table.Th rowSpan={2} w={90} style={{ whiteSpace: 'nowrap' }}>1/3 rule</Table.Th>
+                <Table.Th rowSpan={2} w={90} style={{ whiteSpace: 'nowrap' }}>PDF</Table.Th>
+              </Table.Tr>
+              <Table.Tr>
+                <Table.Th style={{ borderLeft: '1px solid var(--mantine-color-sand-2)' }}>PAYE</Table.Th>
+                <Table.Th>NSSF</Table.Th>
+                <Table.Th>SHIF</Table.Th>
+                <Table.Th>AHL</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
