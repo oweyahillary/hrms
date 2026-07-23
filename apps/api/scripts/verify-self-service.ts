@@ -10,7 +10,19 @@
  * Requires the API running (BASE_URL, default http://localhost:3000/api).
  * Creates a throwaway second organization (direct Prisma, mirroring
  * verify-tenant-scope.ts) to prove tenant isolation, not just per-employee
- * ownership within one org — cleaned up in a finally block.
+ * ownership within one org.
+ *
+ * NOTE on cleanup: the throwaway org's Session/User/Employee/Role rows are
+ * deleted afterwards, but the Organization row itself is NOT — it can't be.
+ * Every action against it goes through a real HTTP login (that's the point —
+ * these are real tokens, not synthetic context injection), and every one of
+ * those writes an append-only audit_logs row (db/immutability.sql blocks
+ * DELETE on that table unconditionally). Organization has a Restrict FK from
+ * audit_logs, so once real auth activity happens against an org, the org row
+ * is permanent — a correct consequence of audit immutability, not a bug here.
+ * Harmless: in CI the whole DB is thrown away with the ephemeral Postgres
+ * container; locally this leaves one small, inert
+ * `__selfservice_probe_<timestamp>__` organization per run.
  */
 import 'dotenv/config';
 import { createPrismaClient, baseClientOf } from '../src/prisma/prisma.service';
@@ -194,14 +206,26 @@ async function main(): Promise<void> {
     const orgZEmp = (await base.user.findFirst({ where: { organizationId: orgZ.id, email: `ss.z.emp.${stamp}@example.com` } }));
     orgZEmpUserId = orgZEmp?.id ?? null;
   } finally {
-    // Tear down org Z entirely — Restrict FKs mean this has to go in dependency order.
+    // Partial teardown ONLY — org Z's Organization row cannot be deleted, and
+    // that's correct, not a bug to work around. Every real login/create above
+    // ran through the real HTTP + auth guard path (that's the point — this is
+    // an end-to-end token, not a synthetic context injection), so each of
+    // those writes generated a real audit_logs row with organizationId = orgZ.
+    // audit_logs is append-only at the DATABASE level (db/immutability.sql,
+    // trigger trg_audit_logs_append_only — DELETE is unconditionally blocked,
+    // by design, for compliance), and Organization has a Restrict FK from
+    // audit_logs. So once org Z has a real authenticated action against it,
+    // its audit trail — and therefore the org row itself — is permanent.
+    // Session/User/Employee/Role carry no such trigger, so those DO get
+    // cleaned up below. In CI this is moot (the whole DB is thrown away with
+    // the ephemeral Postgres container); a local dev DB will accumulate one
+    // small, inert `__selfservice_probe_<timestamp>__` organization per run —
+    // harmless, and identifiable by that name prefix if you ever want to see it.
     const userIds = [orgZAdminUser.id, ...(orgZEmpUserId ? [orgZEmpUserId] : [])];
     await base.session.deleteMany({ where: { userId: { in: userIds } } }).catch(() => undefined);
-    await base.auditLog.deleteMany({ where: { organizationId: orgZ.id } }).catch(() => undefined);
     await base.user.deleteMany({ where: { organizationId: orgZ.id } }).catch(() => undefined);
     await base.employee.deleteMany({ where: { organizationId: orgZ.id } }).catch(() => undefined);
     await base.role.deleteMany({ where: { organizationId: orgZ.id } }).catch(() => undefined);
-    await base.organization.delete({ where: { id: orgZ.id } }).catch(() => undefined);
     await (prisma as any).$disconnect?.();
   }
 
