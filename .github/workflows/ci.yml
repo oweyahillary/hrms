@@ -209,6 +209,10 @@ jobs:
           npx ts-node scripts/verify-self-service.ts
           echo "::endgroup::"
 
+          echo "::group::verify shifts"
+          npx ts-node scripts/verify-shifts.ts
+          echo "::endgroup::"
+
       - name: API logs on failure
         if: failure()
         run: cat /tmp/api.log || true
