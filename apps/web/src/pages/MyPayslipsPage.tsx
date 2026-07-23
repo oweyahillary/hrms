@@ -1,0 +1,116 @@
+import { useEffect, useState } from 'react';
+import { Badge, Button, Card, Center, Skeleton, Stack, Table, Text, Title } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
+import { IconAlertTriangle, IconDownload, IconReceiptOff } from '@tabler/icons-react';
+import { getMyPayslips, downloadMyPayslipPdf, type MyPayslip } from '../api/self-service';
+import { ApiError } from '../api/client';
+
+const kes = (n: number): string =>
+  n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function periodLabel(month: number | null, year: number | null): string {
+  if (!month || !year) return '—';
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-GB', {
+    month: 'long', year: 'numeric', timeZone: 'UTC',
+  });
+}
+
+export function MyPayslipsPage() {
+  const [rows, setRows] = useState<MyPayslip[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await getMyPayslips();
+        if (!cancelled) setRows(data);
+      } catch {
+        if (!cancelled) { setRows([]); setError('Could not load your payslips. Please try again.'); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const download = async (id: string) => {
+    setDownloadingId(id);
+    try {
+      await downloadMyPayslipPdf(id);
+    } catch (e) {
+      notifications.show({
+        color: 'red', icon: <IconAlertTriangle size={16} />,
+        title: 'Download failed',
+        message: e instanceof ApiError ? e.message : 'Could not download this payslip.',
+      });
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  return (
+    <Stack gap="lg">
+      <div>
+        <Title order={1}>My Payslips</Title>
+        <Text c="sand.6" mt={4}>Every finalized payslip issued to you, most recent first</Text>
+      </div>
+
+      <Card p="lg" radius="md">
+        {error && <Text size="sm" c="red" mb="sm">{error}</Text>}
+
+        <Table.ScrollContainer minWidth={520}>
+          <Table verticalSpacing="sm" horizontalSpacing="md">
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Period</Table.Th>
+                <Table.Th ta="right">Gross</Table.Th>
+                <Table.Th ta="right">Net</Table.Th>
+                <Table.Th w={80} />
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {rows === null && Array.from({ length: 3 }, (_, i) => (
+                <Table.Tr key={`s${i}`}>
+                  <Table.Td colSpan={4}><Skeleton h={14} radius="sm" /></Table.Td>
+                </Table.Tr>
+              ))}
+              {rows?.map((p) => (
+                <Table.Tr key={p.id}>
+                  <Table.Td>
+                    <Text size="sm" fw={600}>{periodLabel(p.periodMonth, p.periodYear)}</Text>
+                    {p.runType === 'ADJUSTMENT' && (
+                      <Badge variant="light" size="xs" color="amber" mt={2}>Correction</Badge>
+                    )}
+                  </Table.Td>
+                  <Table.Td ta="right"><Text size="sm">{kes(p.grossPay)}</Text></Table.Td>
+                  <Table.Td ta="right"><Text size="sm" fw={600}>{kes(p.netPay)}</Text></Table.Td>
+                  <Table.Td>
+                    <Button
+                      size="compact-sm" variant="light" leftSection={<IconDownload size={14} />}
+                      loading={downloadingId === p.id} disabled={p.pdfStatus !== 'READY'}
+                      onClick={() => void download(p.id)}
+                    >
+                      PDF
+                    </Button>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+
+        {rows?.length === 0 && (
+          <Center py={48}>
+            <Stack gap={6} align="center">
+              <IconReceiptOff size={30} stroke={1.5} color="var(--mantine-color-sand-4)" />
+              <Text fw={600} mt={4}>No payslips yet</Text>
+              <Text size="sm" c="sand.6" maw={380} ta="center">
+                Payslips appear here once a payroll run that includes you has been finalized.
+              </Text>
+            </Stack>
+          </Center>
+        )}
+      </Card>
+    </Stack>
+  );
+}

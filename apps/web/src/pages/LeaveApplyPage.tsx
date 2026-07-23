@@ -14,6 +14,7 @@ import {
   getPublicHolidays, type Approver, type ApproversFor, type LeaveBalance, type LeaveType,
 } from '../api/leave';
 import { listEmployees, type EmployeeListRow } from '../api/employees';
+import { getMyProfile } from '../api/self-service';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { canManageEmployees } from '../auth/roles';
@@ -68,14 +69,19 @@ export function LeaveApplyPage() {
     let cancelled = false;
     void (async () => {
       try {
-        const [emps, tps] = await Promise.all([
+        // Non-HR applicants have no employee picker (below), so there's
+        // nothing else to ever set form.values.employeeId — without this,
+        // the field stays '' forever and the form can never validate.
+        const [emps, tps, mine] = await Promise.all([
           isHr ? listEmployees({ status: 'ACTIVE', pageSize: 100, sort: 'name', order: 'asc' })
             : Promise.resolve({ data: [] as EmployeeListRow[] }),
           getLeaveTypes(),
+          isHr ? Promise.resolve(null) : getMyProfile(),
         ]);
         if (cancelled) return;
         setEmployees(emps.data);
         setTypes(tps);
+        if (mine) form.setFieldValue('employeeId', mine.id);
       } catch (e) {
         if (!cancelled) {
           setFormError(e instanceof ApiError && e.status === 403
@@ -85,6 +91,7 @@ export function LeaveApplyPage() {
       }
     })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHr]);
 
   // Who approves is a property of the EMPLOYEE and the org's policy — not
