@@ -5,7 +5,7 @@ import {
 } from '@mantine/core';
 import {
   IconLayoutDashboard, IconUsers, IconCalendarStats, IconReportMoney, IconChevronDown, IconLogout,
-  IconSettings, IconReceipt2, IconUserCircle, IconUser, IconClockHour4, IconClipboardCheck,
+  IconSettings, IconReceipt2, IconUserCircle, IconUser, IconClockHour4, IconClipboardCheck, IconShieldLock,
 } from '@tabler/icons-react';
 import type { Icon } from '@tabler/icons-react';
 import { useAuth } from '../auth/AuthContext';
@@ -59,6 +59,25 @@ const HR_NAV: NavItem[] = [
   },
   { to: '/shifts', label: 'Shifts', icon: IconClockHour4 },
   { to: '/attendance', label: 'Attendance', icon: IconClipboardCheck },
+];
+
+/**
+ * Data-subject requests, breach incidents, consent and retention — the DPA
+ * compliance module. HR_MANAGEMENT_ROLES only, same as the API's own gate on
+ * every one of these routes.
+ */
+const COMPLIANCE_NAV: NavItem[] = [
+  {
+    to: '/compliance',
+    label: 'Compliance',
+    icon: IconShieldLock,
+    children: [
+      { to: '/compliance/dsr', label: 'Data subject requests' },
+      { to: '/compliance/breaches', label: 'Breach incidents' },
+      { to: '/compliance/consent', label: 'Consent' },
+      { to: '/compliance/retention', label: 'Retention policies' },
+    ],
+  },
 ];
 
 /**
@@ -175,6 +194,7 @@ export function AppShellLayout({ children }: { children: ReactNode }) {
             ...NAV,
             ...(canManageEmployees(user?.role) ? HR_NAV : []),
             ...(canManageEmployees(user?.role) ? PAYROLL_NAV : []),
+            ...(canManageEmployees(user?.role) ? COMPLIANCE_NAV : []),
             ...(canManageOrg(user?.role) ? ADMIN_NAV : []),
             ...(canManageEmployees(user?.role) ? MY_SPACE_NAV : SELF_SERVICE_NAV),
           ].map((item) => {
