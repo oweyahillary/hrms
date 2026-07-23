@@ -49,7 +49,7 @@ export function MyPayslipsPage() {
   return (
     <Stack gap="lg">
       <div>
-        <Title order={1}>My Payslips</Title>
+        <Title order={1}>My payslips</Title>
         <Text c="sand.6" mt={4}>Every finalized payslip issued to you, most recent first</Text>
       </div>
 

@@ -19,6 +19,7 @@ import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { canManageEmployees } from '../auth/roles';
 import { ErrorCard } from '../components/ErrorCard';
+import { formatDate as fmtDate } from '../utils/date';
 
 const PAGE_SIZE = 25;
 
@@ -42,16 +43,6 @@ const STATUS_OPTIONS: Option[] = EMPLOYMENT_STATUSES.map((s) => ({
   label: STATUS_LABEL[s] ?? s,
 }));
 
-function fmtDate(iso: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  // Dates are stored as calendar dates (@db.Date) and come back at UTC midnight.
-  // Format in UTC so a hire date never shifts a day for users behind UTC.
-  return d.toLocaleDateString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC',
-  });
-}
 
 function initialsOf(fullName: string): string {
   const parts = fullName.trim().split(/\s+/).filter(Boolean);

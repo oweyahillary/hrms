@@ -282,9 +282,9 @@ export function DashboardPage() {
           <div>
             <Text size="sm" fw={600} c="sand.7" mb="xs">Your shortcuts</Text>
             <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
-              <ShortcutCard to="/me/payslips" icon={IconReceipt2} label="My Payslips" />
-              <ShortcutCard to="/me/leave" icon={IconCalendarStats} label="My Leave" />
-              <ShortcutCard to="/me/profile" icon={IconUserCircle} label="My Profile" />
+              <ShortcutCard to="/me/payslips" icon={IconReceipt2} label="My payslips" />
+              <ShortcutCard to="/me/leave" icon={IconCalendarStats} label="My leave" />
+              <ShortcutCard to="/me/profile" icon={IconUserCircle} label="My profile" />
             </SimpleGrid>
           </div>
         </>

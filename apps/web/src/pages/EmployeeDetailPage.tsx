@@ -23,6 +23,7 @@ import { canManageEmployees } from '../auth/roles';
 import { ErrorCard } from '../components/ErrorCard';
 import { SalarySection } from '../components/SalarySection';
 import { SeveranceSection } from '../components/SeveranceSection';
+import { formatDate as fmtDate } from '../utils/date';
 
 const STATUS_COLOR: Record<string, string> = {
   ACTIVE: 'brand', ON_LEAVE: 'amber', SUSPENDED: 'red', EXITED: 'sand',
@@ -34,15 +35,6 @@ const TYPE_LABEL: Record<string, string> = {
   PERMANENT: 'Permanent', CONTRACT: 'Contract', CASUAL: 'Casual', INTERN: 'Intern',
 };
 
-/** @db.Date values arrive at UTC midnight — format in UTC or they shift a day. */
-function fmtDate(iso: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC',
-  });
-}
 
 /**
  * Mirrors the API's maskLast4. Used only to re-hide values the server already
