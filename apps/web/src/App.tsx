@@ -40,6 +40,10 @@ import { SettingsShiftsPage } from './pages/SettingsShiftsPage';
 import { SettingsDevicesPage } from './pages/SettingsDevicesPage';
 import { AttendancePage } from './pages/AttendancePage';
 import { MyAttendancePage } from './pages/MyAttendancePage';
+import { DsrPage } from './pages/compliance/DsrPage';
+import { BreachesPage } from './pages/compliance/BreachesPage';
+import { ConsentPage } from './pages/compliance/ConsentPage';
+import { RetentionPage } from './pages/compliance/RetentionPage';
 
 export function App() {
   return (
@@ -77,6 +81,10 @@ export function App() {
                   <Route path="reports" element={<ReportsPage />} />
                   <Route path=":id" element={<PayrollRunDetailPage />} />
                 </Route>
+                <Route path="/compliance/dsr" element={<RequireRole check={canManageEmployees}><DsrPage /></RequireRole>} />
+                <Route path="/compliance/breaches" element={<RequireRole check={canManageEmployees}><BreachesPage /></RequireRole>} />
+                <Route path="/compliance/consent" element={<RequireRole check={canManageEmployees}><ConsentPage /></RequireRole>} />
+                <Route path="/compliance/retention" element={<RequireRole check={canManageEmployees}><RetentionPage /></RequireRole>} />
                 <Route path="/settings" element={<RequireRole check={canManageOrg}><SettingsPage /></RequireRole>} />
                 <Route path="/settings/leave" element={<RequireRole check={canManageOrg}><SettingsLeavePage /></RequireRole>} />
                 <Route path="/settings/numbering" element={<RequireRole check={canManageOrg}><SettingsNumberingPage /></RequireRole>} />
