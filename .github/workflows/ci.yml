@@ -221,6 +221,10 @@ jobs:
           npx ts-node scripts/verify-device-push.ts
           echo "::endgroup::"
 
+          echo "::group::verify hidden-modules"
+          npx ts-node scripts/verify-hidden-modules.ts
+          echo "::endgroup::"
+
       - name: API logs on failure
         if: failure()
         run: cat /tmp/api.log || true
