@@ -20,6 +20,7 @@ import { ComplianceModule } from './compliance/compliance.module';
 import { OrganizationModule } from './organization/organization.module';
 import { ReportsModule } from './reports/reports.module';
 import { UsersModule } from './users/users.module';
+import { SelfServiceModule } from './self-service/self-service.module';
 import { HealthModule } from './health/health.module';
 
 // The RequestContextMiddleware is bound globally in main.ts (app.use).
@@ -51,6 +52,7 @@ import { HealthModule } from './health/health.module';
     OrganizationModule,
     ReportsModule,
     UsersModule,
+    SelfServiceModule,
     HealthModule,
     // Feature modules land here as they are built:
     // employees, attendance, leave, payroll, compliance
