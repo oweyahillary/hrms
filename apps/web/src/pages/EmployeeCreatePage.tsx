@@ -13,8 +13,6 @@ import type { Icon } from '@tabler/icons-react';
 import { createEmployee, getNextNumber, type CreateEmployeeInput } from '../api/employees';
 import { getDepartments, getJobTitles, type Option } from '../api/lookups';
 import { ApiError } from '../api/client';
-import { useAuth } from '../auth/AuthContext';
-import { canManageEmployees } from '../auth/roles';
 import {
   KENYA_PHONE_REGEX, KRA_PIN_REGEX, NATIONAL_ID_REGEX, errors as msg,
   normalizeKraPin, normalizePhone,
@@ -113,8 +111,6 @@ function toPayload(v: FormValues): CreateEmployeeInput {
 
 export function EmployeeCreatePage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const allowed = canManageEmployees(user?.role);
 
   const [departments, setDepartments] = useState<Option[]>([]);
   const [jobTitles, setJobTitles] = useState<Option[]>([]);
@@ -208,19 +204,6 @@ export function EmployeeCreatePage() {
     </Anchor>
   );
 
-  if (!allowed) {
-    return (
-      <Stack gap="lg">
-        {back}
-        <Card p="xl" radius="md">
-          <Title order={3}>You can&apos;t add employees</Title>
-          <Text c="sand.6" mt="xs">
-            Adding people to the organisation needs an HR role. Ask an administrator for access.
-          </Text>
-        </Card>
-      </Stack>
-    );
-  }
 
   return (
     <Stack gap="lg">

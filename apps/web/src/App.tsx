@@ -1,5 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { RequireAuth } from './auth/RequireAuth';
+import { RequireRole } from './auth/RequireRole';
+import { canManageEmployees, canManageOrg } from './auth/roles';
 import { AppShellLayout } from './layout/AppShellLayout';
 import { LoginPage } from './pages/LoginPage';
 import { SsoCallbackPage } from './pages/SsoCallbackPage';
@@ -47,15 +49,16 @@ export function App() {
             <AppShellLayout>
               <Routes>
                 <Route path="/" element={<DashboardPage />} />
-                <Route path="/employees" element={<EmployeesPage />} />
-                <Route path="/employees/new" element={<EmployeeCreatePage />} />
-                <Route path="/employees/:id" element={<EmployeeDetailPage />} />
-                <Route path="/employees/:id/edit" element={<EmployeeEditPage />} />
-                <Route path="/leave" element={<LeavePage />} />
+                <Route path="/employees" element={<RequireRole check={canManageEmployees}><EmployeesPage /></RequireRole>} />
+                <Route path="/employees/new" element={<RequireRole check={canManageEmployees}><EmployeeCreatePage /></RequireRole>} />
+                <Route path="/employees/:id" element={<RequireRole check={canManageEmployees}><EmployeeDetailPage /></RequireRole>} />
+                <Route path="/employees/:id/edit" element={<RequireRole check={canManageEmployees}><EmployeeEditPage /></RequireRole>} />
+                <Route path="/leave" element={<RequireRole check={canManageEmployees}><LeavePage /></RequireRole>} />
+                {/* Shared: linked from both the HR "Leave" section and everyone's "My Leave" — not role-gated. */}
                 <Route path="/leave/apply" element={<LeaveApplyPage />} />
-                <Route path="/leave/balances" element={<LeaveBalancesPage />} />
-                <Route path="/leave/types" element={<LeaveTypesPage />} />
-                <Route path="/payroll" element={<PayrollLayout />}>
+                <Route path="/leave/balances" element={<RequireRole check={canManageEmployees}><LeaveBalancesPage /></RequireRole>} />
+                <Route path="/leave/types" element={<RequireRole check={canManageEmployees}><LeaveTypesPage /></RequireRole>} />
+                <Route path="/payroll" element={<RequireRole check={canManageEmployees}><PayrollLayout /></RequireRole>}>
                   <Route index element={<PayrollRunsPage />} />
                   <Route path="new" element={<PayrollRunCreatePage />} />
                   <Route path="preview" element={<PayrollPreviewPage />} />
@@ -67,12 +70,12 @@ export function App() {
                   <Route path="reports" element={<ReportsPage />} />
                   <Route path=":id" element={<PayrollRunDetailPage />} />
                 </Route>
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="/settings/leave" element={<SettingsLeavePage />} />
-                <Route path="/settings/numbering" element={<SettingsNumberingPage />} />
-                <Route path="/settings/payroll" element={<SettingsPayrollPage />} />
-                <Route path="/settings/users" element={<UsersPage />} />
-                <Route path="/settings/users/new" element={<InviteUserPage />} />
+                <Route path="/settings" element={<RequireRole check={canManageOrg}><SettingsPage /></RequireRole>} />
+                <Route path="/settings/leave" element={<RequireRole check={canManageOrg}><SettingsLeavePage /></RequireRole>} />
+                <Route path="/settings/numbering" element={<RequireRole check={canManageOrg}><SettingsNumberingPage /></RequireRole>} />
+                <Route path="/settings/payroll" element={<RequireRole check={canManageOrg}><SettingsPayrollPage /></RequireRole>} />
+                <Route path="/settings/users" element={<RequireRole check={canManageOrg}><UsersPage /></RequireRole>} />
+                <Route path="/settings/users/new" element={<RequireRole check={canManageOrg}><InviteUserPage /></RequireRole>} />
                 <Route path="/me/payslips" element={<MyPayslipsPage />} />
                 <Route path="/me/leave" element={<MyLeavePage />} />
                 <Route path="/me/profile" element={<MyProfilePage />} />

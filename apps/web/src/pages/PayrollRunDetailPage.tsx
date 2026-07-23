@@ -336,18 +336,6 @@ export function PayrollRunDetailPage() {
     </Anchor>
   );
 
-  if (!allowed) {
-    return (
-      <Stack gap="lg">
-        {back}
-        <Card p="xl" radius="md">
-          <Title order={3}>You can&apos;t view payroll</Title>
-          <Text c="sand.6" mt="xs">Payroll needs an HR role. Ask an administrator for access.</Text>
-        </Card>
-      </Stack>
-    );
-  }
-
   if (loading) {
     return (
       <Stack gap="lg">

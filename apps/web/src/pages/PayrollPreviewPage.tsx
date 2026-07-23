@@ -8,8 +8,6 @@ import { useForm } from '@mantine/form';
 import { IconAlertTriangle, IconArrowLeft, IconCalculator, IconWallet } from '@tabler/icons-react';
 import { previewPayroll, type PreviewPayrollResult } from '../api/payroll';
 import { ApiError } from '../api/client';
-import { useAuth } from '../auth/AuthContext';
-import { canManageEmployees } from '../auth/roles';
 
 interface FormValues {
   grossPay: number | '';
@@ -31,9 +29,6 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
 }
 
 export function PayrollPreviewPage() {
-  const { user } = useAuth();
-  const allowed = canManageEmployees(user?.role);
-
   const [result, setResult] = useState<PreviewPayrollResult | null>(null);
   const [computing, setComputing] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -68,18 +63,6 @@ export function PayrollPreviewPage() {
       <Group gap={4}><IconArrowLeft size={14} /> Back to payroll</Group>
     </Anchor>
   );
-
-  if (!allowed) {
-    return (
-      <Stack gap="lg">
-        {back}
-        <Card p="xl" radius="md">
-          <Title order={3}>You can&apos;t use the preview calculator</Title>
-          <Text c="sand.6" mt="xs">This needs an HR role. Ask an administrator for access.</Text>
-        </Card>
-      </Stack>
-    );
-  }
 
   const b = result?.breakdown;
 

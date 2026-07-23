@@ -57,23 +57,6 @@ export function PayrollRunsPage() {
     return () => { cancelled = true; };
   }, [allowed]);
 
-  if (!allowed) {
-    return (
-      <Stack gap="lg">
-        <div>
-          <Title order={1}>Payroll</Title>
-          <Text c="sand.6" mt={4}>Payroll runs, payslips and statutory deductions</Text>
-        </div>
-        <Card p="xl" radius="md">
-          <Title order={3}>You can&apos;t view payroll</Title>
-          <Text c="sand.6" mt="xs">
-            Payroll needs an HR role. Ask an administrator for access.
-          </Text>
-        </Card>
-      </Stack>
-    );
-  }
-
   return (
     <Stack gap="lg">
       <Group justify="space-between" align="flex-end" wrap="wrap" gap="sm">

@@ -109,18 +109,6 @@ export function PayrollRunCreatePage() {
     </Anchor>
   );
 
-  if (!allowed) {
-    return (
-      <Stack gap="lg">
-        {back}
-        <Card p="xl" radius="md">
-          <Title order={3}>You can&apos;t run payroll</Title>
-          <Text c="sand.6" mt="xs">Running payroll needs an HR role. Ask an administrator for access.</Text>
-        </Card>
-      </Stack>
-    );
-  }
-
   const employeeOptions = employees.map((e) => ({
     value: e.id, label: `${e.fullName} · ${e.employeeNumber}`,
   }));
