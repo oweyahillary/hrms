@@ -23,6 +23,7 @@ import { canManageEmployees } from '../auth/roles';
 import { ErrorCard } from '../components/ErrorCard';
 import { SalarySection } from '../components/SalarySection';
 import { SeveranceSection } from '../components/SeveranceSection';
+import { DocumentsSection } from '../components/DocumentsSection';
 import { formatDate as fmtDate } from '../utils/date';
 
 const STATUS_COLOR: Record<string, string> = {
@@ -481,6 +482,10 @@ export function EmployeeDetailPage() {
             hasExited={emp.employmentStatus === 'EXITED'}
             defaultExitDate={emp.exitDate}
           />
+        </Grid.Col>
+
+        <Grid.Col span={12}>
+          <DocumentsSection employeeId={emp.id} canEdit={canManage} />
         </Grid.Col>
       </Grid>
     </Stack>

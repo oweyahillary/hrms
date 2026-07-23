@@ -1,17 +1,25 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Badge, Button, Card, Grid, Group, Skeleton, Stack, Text, ThemeIcon, Title,
+  Badge, Button, Card, Grid, Group, Skeleton, Stack, Table, Text, ThemeIcon, Title,
 } from '@mantine/core';
 import {
-  IconBriefcase, IconBuildingBank, IconEye, IconEyeOff, IconUser, IconUsersGroup,
+  IconAlertTriangle, IconBriefcase, IconBuildingBank, IconDownload, IconEye, IconEyeOff, IconFiles,
+  IconUser, IconUsersGroup,
 } from '@tabler/icons-react';
 import type { Icon } from '@tabler/icons-react';
-import { getMyProfile, type MyProfile } from '../api/self-service';
+import {
+  downloadMyDocument, getMyDocuments, getMyProfile, type MyDocument, type MyProfile,
+} from '../api/self-service';
 import {
   getDepartments, getJobTitles, departmentMap, jobTitleMap,
 } from '../api/lookups';
+import { ApiError } from '../api/client';
 import { ErrorCard } from '../components/ErrorCard';
 import { formatDate as fmtDate } from '../utils/date';
+
+const DOC_TYPE_LABEL: Record<string, string> = {
+  ID_COPY: 'ID copy', CONTRACT: 'Contract', CERTIFICATE: 'Certificate', OTHER: 'Other',
+};
 
 const STATUS_COLOR: Record<string, string> = {
   ACTIVE: 'brand', ON_LEAVE: 'amber', SUSPENDED: 'red', EXITED: 'sand',
@@ -93,6 +101,10 @@ export function MyProfilePage() {
   const [revealed, setRevealed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
+  const [docs, setDocs] = useState<MyDocument[] | null>(null);
+  const [docsError, setDocsError] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     setError(null);
@@ -111,6 +123,28 @@ export function MyProfilePage() {
     })();
     return () => { cancelled = true; };
   }, [reloadKey]);
+
+  const loadDocs = useCallback(async () => {
+    setDocsError(null);
+    try {
+      setDocs(await getMyDocuments());
+    } catch {
+      setDocsError('Could not load your documents.');
+    }
+  }, []);
+
+  useEffect(() => { void loadDocs(); }, [loadDocs]);
+
+  const doDownload = async (d: MyDocument) => {
+    setDownloadingId(d.id);
+    try {
+      await downloadMyDocument(d.id, d.filename);
+    } catch (e) {
+      setDocsError(e instanceof ApiError ? e.message : 'Could not download this document.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   const sensitive = useMemo(() => {
     if (!profile) return { nationalId: '—', kraPin: '—', bankAccountNumber: '—' };
@@ -198,6 +232,60 @@ export function MyProfilePage() {
       <Section title="Next of kin" icon={IconUsersGroup}>
         <NextOfKin value={profile.nextOfKin} />
       </Section>
+
+      <Card p="lg" radius="md">
+        <Group gap="xs" mb="md">
+          <ThemeIcon size={28} radius="md" variant="light" color="brand">
+            <IconFiles size={16} stroke={1.7} />
+          </ThemeIcon>
+          <Title order={3}>My documents</Title>
+        </Group>
+
+        {docsError && (
+          <Group gap={6} mb="md" c="red">
+            <IconAlertTriangle size={16} />
+            <Text size="sm">{docsError}</Text>
+          </Group>
+        )}
+
+        {docs === null && !docsError && <Skeleton h={70} radius="sm" />}
+
+        {docs !== null && docs.length === 0 && (
+          <Text c="sand.6">No documents on file yet.</Text>
+        )}
+
+        {docs !== null && docs.length > 0 && (
+          <Table.ScrollContainer minWidth={480}>
+            <Table verticalSpacing="sm">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Type</Table.Th>
+                  <Table.Th>Filename</Table.Th>
+                  <Table.Th>Uploaded</Table.Th>
+                  <Table.Th />
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {docs.map((d) => (
+                  <Table.Tr key={d.id}>
+                    <Table.Td>{DOC_TYPE_LABEL[d.documentType] ?? d.documentType}</Table.Td>
+                    <Table.Td><Text size="sm" lineClamp={1} maw={220}>{d.filename}</Text></Table.Td>
+                    <Table.Td>{fmtDate(d.uploadedAt)}</Table.Td>
+                    <Table.Td>
+                      <Button
+                        size="compact-sm" variant="subtle" leftSection={<IconDownload size={13} />}
+                        loading={downloadingId === d.id} onClick={() => void doDownload(d)}
+                      >
+                        Download
+                      </Button>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        )}
+      </Card>
     </Stack>
   );
 }

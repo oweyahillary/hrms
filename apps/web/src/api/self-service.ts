@@ -63,3 +63,18 @@ export const getMyShifts = (from: string, to: string): Promise<RosterEntry[]> =>
 
 export const getMyAttendance = (from: string, to: string): Promise<AttendanceRecord[]> =>
   api<AttendanceRecord[]>(`/me/attendance?from=${from}&to=${to}`);
+
+export interface MyDocument {
+  id: string;
+  employeeId: string;
+  documentType: string;
+  filename: string;
+  isSensitive: boolean;
+  uploadedById: string;
+  uploadedAt: string;
+}
+
+export const getMyDocuments = (): Promise<MyDocument[]> => api<MyDocument[]>('/me/documents');
+
+export const downloadMyDocument = (id: string, filename: string): Promise<void> =>
+  downloadFile(`/me/documents/${id}/download`, filename);
