@@ -35,6 +35,8 @@ import { InviteUserPage } from './pages/InviteUserPage';
 import { MyPayslipsPage } from './pages/MyPayslipsPage';
 import { MyLeavePage } from './pages/MyLeavePage';
 import { MyProfilePage } from './pages/MyProfilePage';
+import { ShiftsPage } from './pages/ShiftsPage';
+import { SettingsShiftsPage } from './pages/SettingsShiftsPage';
 
 export function App() {
   return (
@@ -58,6 +60,7 @@ export function App() {
                 <Route path="/leave/apply" element={<LeaveApplyPage />} />
                 <Route path="/leave/balances" element={<RequireRole check={canManageEmployees}><LeaveBalancesPage /></RequireRole>} />
                 <Route path="/leave/types" element={<RequireRole check={canManageEmployees}><LeaveTypesPage /></RequireRole>} />
+                <Route path="/shifts" element={<RequireRole check={canManageEmployees}><ShiftsPage /></RequireRole>} />
                 <Route path="/payroll" element={<RequireRole check={canManageEmployees}><PayrollLayout /></RequireRole>}>
                   <Route index element={<PayrollRunsPage />} />
                   <Route path="new" element={<PayrollRunCreatePage />} />
@@ -74,6 +77,7 @@ export function App() {
                 <Route path="/settings/leave" element={<RequireRole check={canManageOrg}><SettingsLeavePage /></RequireRole>} />
                 <Route path="/settings/numbering" element={<RequireRole check={canManageOrg}><SettingsNumberingPage /></RequireRole>} />
                 <Route path="/settings/payroll" element={<RequireRole check={canManageOrg}><SettingsPayrollPage /></RequireRole>} />
+                <Route path="/settings/shifts" element={<RequireRole check={canManageOrg}><SettingsShiftsPage /></RequireRole>} />
                 <Route path="/settings/users" element={<RequireRole check={canManageOrg}><UsersPage /></RequireRole>} />
                 <Route path="/settings/users/new" element={<RequireRole check={canManageOrg}><InviteUserPage /></RequireRole>} />
                 <Route path="/me/payslips" element={<MyPayslipsPage />} />

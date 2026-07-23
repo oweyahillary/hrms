@@ -1,5 +1,6 @@
 import { api, downloadFile } from './client';
 import type { LeaveRequest, LeaveBalance } from './leave';
+import type { RosterEntry } from './shifts';
 
 /** The signed-in user's own employee record — always fully decrypted (see /me/profile on the API). */
 export interface MyProfile {
@@ -55,3 +56,6 @@ export interface MyLeave {
 }
 
 export const getMyLeave = (): Promise<MyLeave> => api<MyLeave>('/me/leave');
+
+export const getMyShifts = (from: string, to: string): Promise<RosterEntry[]> =>
+  api<RosterEntry[]>(`/me/shifts?from=${from}&to=${to}`);
