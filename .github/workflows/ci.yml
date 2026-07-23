@@ -205,6 +205,10 @@ jobs:
           npx ts-node scripts/verify-severance.ts
           echo "::endgroup::"
 
+          echo "::group::verify self-service"
+          npx ts-node scripts/verify-self-service.ts
+          echo "::endgroup::"
+
       - name: API logs on failure
         if: failure()
         run: cat /tmp/api.log || true
