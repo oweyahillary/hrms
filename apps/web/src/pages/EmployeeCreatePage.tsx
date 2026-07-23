@@ -17,6 +17,7 @@ import {
   KENYA_PHONE_REGEX, KRA_PIN_REGEX, NATIONAL_ID_REGEX, errors as msg,
   normalizeKraPin, normalizePhone,
 } from '../validation/kenya';
+import { useUnsavedChangesWarning } from '../hooks/useUnsavedChangesWarning';
 
 /** Small icon + heading pairing shared by every form section card on this page. */
 function SectionTitle({ icon: SectionIcon, children }: { icon: Icon; children: React.ReactNode }) {
@@ -137,6 +138,7 @@ export function EmployeeCreatePage() {
       employmentType: (v) => (v ? null : 'Pick an employment type'),
     },
   });
+  useUnsavedChangesWarning(form.isDirty());
 
   useEffect(() => {
     let cancelled = false;

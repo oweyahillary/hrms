@@ -31,6 +31,7 @@ export function PayrollPreviewPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   const form = useForm<FormValues>({
+    validateInputOnBlur: true,
     initialValues: { grossPay: '', pensionablePay: '', asOf: '' },
     validate: {
       grossPay: (v) => (typeof v === 'number' && v >= 0 ? null : 'Enter a gross pay amount'),

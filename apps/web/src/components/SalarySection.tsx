@@ -39,6 +39,7 @@ export function SalarySection({ employeeId, canEdit }: { employeeId: string; can
   const [users, setUsers] = useState<UserOption[]>([]);
 
   const form = useForm<FormValues>({
+    validateInputOnBlur: true,
     initialValues: { basicSalary: '', effectiveDate: new Date().toISOString().slice(0, 10), reason: '', approvedById: '' },
     validate: {
       basicSalary: (v) => (Number(v) > 0 ? null : 'Enter the new basic salary'),

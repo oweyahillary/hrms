@@ -47,6 +47,7 @@ export function SeveranceSection({
   const [result, setResult] = useState<SeveranceCalculation | null>(null);
 
   const form = useForm<FormValues>({
+    validateInputOnBlur: true,
     initialValues: {
       exitDate: defaultExitDate ?? today(),
       reason: 'REDUNDANCY',

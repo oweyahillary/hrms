@@ -9,6 +9,7 @@ import {
   getPayrollSettings, updatePayrollSettings, type SeveranceDayRateBasis,
 } from '../api/organization';
 import { ApiError } from '../api/client';
+import { useUnsavedChangesWarning } from '../hooks/useUnsavedChangesWarning';
 
 const BASIS_OPTIONS: { value: SeveranceDayRateBasis; label: string }[] = [
   { value: 'CALENDAR_30', label: 'Calendar days (30) — the common convention' },
@@ -27,6 +28,7 @@ export function SettingsPayrollPage() {
   const form = useForm<FormValues>({
     initialValues: { severanceDayRateBasis: 'CALENDAR_30' },
   });
+  useUnsavedChangesWarning(form.isDirty());
 
   useEffect(() => {
     let cancelled = false;

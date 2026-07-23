@@ -38,6 +38,7 @@ export function PayrollRunCreatePage() {
   const [skipped, setSkipped] = useState<SkippedEmployee[] | null>(null);
 
   const form = useForm<FormValues>({
+    validateInputOnBlur: true,
     initialValues: {
       periodMonth: String(now.getUTCMonth() + 1),
       periodYear: String(now.getUTCFullYear()),

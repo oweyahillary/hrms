@@ -29,6 +29,7 @@ export function AdjustmentCreatePage() {
   const [saving, setSaving] = useState(false);
 
   const form = useForm<FormValues>({
+    validateInputOnBlur: true,
     initialValues: {
       employeeId: '', type: 'DEDUCTION', amount: '', isTaxable: true,
       targetPeriodMonth: now.getMonth() + 1, targetPeriodYear: now.getFullYear(), reason: '',

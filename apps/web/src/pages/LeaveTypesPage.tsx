@@ -50,6 +50,7 @@ export function LeaveTypesPage() {
   const [saving, setSaving] = useState(false);
 
   const form = useForm<FormValues>({
+    validateInputOnBlur: true,
     initialValues: {
       name: '', isPaid: true, requiresApproval: true, accrualMethod: 'MONTHLY',
       annualDays: 21, carryOverMax: 5, carryOverExpiryMonths: 3,
