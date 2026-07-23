@@ -15,9 +15,7 @@ import { loadEmployeeOptions, type EmployeeOption } from '../api/employee-option
 import { BUCKET_LABEL } from '../api/severance';
 import { ApiError } from '../api/client';
 import { ErrorCard } from '../components/ErrorCard';
-
-const kes = (n: number): string =>
-  n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+import { kes } from '../utils/money';
 
 const now = new Date();
 

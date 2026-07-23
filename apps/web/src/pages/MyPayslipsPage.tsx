@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Badge, Button, Card, Center, Skeleton, Stack, Table, Text, Title } from '@mantine/core';
+import { Badge, Box, Button, Card, Center, Group, Skeleton, Stack, Table, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconAlertTriangle, IconDownload, IconReceiptOff } from '@tabler/icons-react';
 import { getMyPayslips, downloadMyPayslipPdf, type MyPayslip } from '../api/self-service';
 import { ApiError } from '../api/client';
 import { ErrorCard } from '../components/ErrorCard';
-
-const kes = (n: number): string =>
-  n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+import { kes } from '../utils/money';
 
 function periodLabel(month: number | null, year: number | null): string {
   if (!month || !year) return '—';
@@ -58,46 +56,76 @@ export function MyPayslipsPage() {
       <Card p="lg" radius="md">
         {error && <ErrorCard message={error} onRetry={() => void load()} retrying={rows === null} />}
 
-        {!error && <><Table.ScrollContainer minWidth={520}>
-          <Table verticalSpacing="sm" horizontalSpacing="md">
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Period</Table.Th>
-                <Table.Th ta="right">Gross</Table.Th>
-                <Table.Th ta="right">Net</Table.Th>
-                <Table.Th w={80} />
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {rows === null && Array.from({ length: 3 }, (_, i) => (
-                <Table.Tr key={`s${i}`}>
-                  <Table.Td colSpan={4}><Skeleton h={14} radius="sm" /></Table.Td>
+        {!error && <>
+        <Box visibleFrom="sm">
+          <Table.ScrollContainer minWidth={520}>
+            <Table verticalSpacing="sm" horizontalSpacing="md">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Period</Table.Th>
+                  <Table.Th ta="right">Gross</Table.Th>
+                  <Table.Th ta="right">Net</Table.Th>
+                  <Table.Th w={80} />
                 </Table.Tr>
-              ))}
-              {rows?.map((p) => (
-                <Table.Tr key={p.id}>
-                  <Table.Td>
-                    <Text size="sm" fw={600}>{periodLabel(p.periodMonth, p.periodYear)}</Text>
-                    {p.runType === 'ADJUSTMENT' && (
-                      <Badge variant="light" size="xs" color="amber" mt={2}>Correction</Badge>
-                    )}
-                  </Table.Td>
-                  <Table.Td ta="right"><Text size="sm">{kes(p.grossPay)}</Text></Table.Td>
-                  <Table.Td ta="right"><Text size="sm" fw={600}>{kes(p.netPay)}</Text></Table.Td>
-                  <Table.Td>
-                    <Button
-                      size="compact-sm" variant="light" leftSection={<IconDownload size={14} />}
-                      loading={downloadingId === p.id} disabled={p.pdfStatus !== 'READY'}
-                      onClick={() => void download(p.id)}
-                    >
-                      PDF
-                    </Button>
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
+              </Table.Thead>
+              <Table.Tbody>
+                {rows === null && Array.from({ length: 3 }, (_, i) => (
+                  <Table.Tr key={`s${i}`}>
+                    <Table.Td colSpan={4}><Skeleton h={14} radius="sm" /></Table.Td>
+                  </Table.Tr>
+                ))}
+                {rows?.map((p) => (
+                  <Table.Tr key={p.id}>
+                    <Table.Td>
+                      <Text size="sm" fw={600}>{periodLabel(p.periodMonth, p.periodYear)}</Text>
+                      {p.runType === 'ADJUSTMENT' && (
+                        <Badge variant="light" size="xs" color="amber" mt={2}>Correction</Badge>
+                      )}
+                    </Table.Td>
+                    <Table.Td ta="right"><Text size="sm">{kes(p.grossPay)}</Text></Table.Td>
+                    <Table.Td ta="right"><Text size="sm" fw={600}>{kes(p.netPay)}</Text></Table.Td>
+                    <Table.Td>
+                      <Button
+                        size="compact-sm" variant="light" leftSection={<IconDownload size={14} />}
+                        loading={downloadingId === p.id} disabled={p.pdfStatus !== 'READY'}
+                        onClick={() => void download(p.id)}
+                      >
+                        PDF
+                      </Button>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        </Box>
+
+        {/* Below sm: one card per payslip instead of a horizontally-scrolling table. */}
+        <Stack hiddenFrom="sm" gap="sm">
+          {rows === null && Array.from({ length: 3 }, (_, i) => (
+            <Card key={`ms${i}`} p="md" radius="md"><Skeleton h={14} w="50%" radius="sm" /></Card>
+          ))}
+          {rows?.map((p) => (
+            <Card key={p.id} p="md" radius="md">
+              <Group justify="space-between" align="flex-start">
+                <div>
+                  <Text size="sm" fw={600}>{periodLabel(p.periodMonth, p.periodYear)}</Text>
+                  {p.runType === 'ADJUSTMENT' && (
+                    <Badge variant="light" size="xs" color="amber" mt={2}>Correction</Badge>
+                  )}
+                  <Text size="xs" c="sand.6" mt={4}>Gross {kes(p.grossPay)} · Net {kes(p.netPay)}</Text>
+                </div>
+                <Button
+                  size="compact-sm" variant="light" leftSection={<IconDownload size={14} />}
+                  loading={downloadingId === p.id} disabled={p.pdfStatus !== 'READY'}
+                  onClick={() => void download(p.id)}
+                >
+                  PDF
+                </Button>
+              </Group>
+            </Card>
+          ))}
+        </Stack>
 
         {rows?.length === 0 && (
           <Center py={48}>

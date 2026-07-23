@@ -8,15 +8,12 @@ import {
 } from '@tabler/icons-react';
 import { getYearTrend, getHeadcount, getLeaveInboxCount, type TrendMonth } from '../api/reports';
 import { ErrorCard } from '../components/ErrorCard';
+import { kes } from '../utils/money';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
-
-function fmtKES(n: number): string {
-  return `KES ${Math.round(n).toLocaleString('en-KE')}`;
-}
 
 function Sparkline({ values, width = 320, height = 56 }: { values: number[]; width?: number; height?: number }) {
   const max = Math.max(1, ...values);
@@ -129,7 +126,7 @@ export function DashboardPage() {
 
             {loading
               ? <Skeleton h={38} w={220} my="xs" radius="sm" />
-              : <Text fz={34} fw={700} mt="md" mb="md">{fmtKES(data?.grossPay ?? 0)}</Text>}
+              : <Text fz={34} fw={700} mt="md" mb="md">{kes(data?.grossPay ?? 0)}</Text>}
 
             {loading
               ? <Skeleton h={56} radius="sm" />

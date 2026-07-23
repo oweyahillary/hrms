@@ -30,6 +30,16 @@ button, a, [data-hoverable], .mantine-NavLink-root, .mantine-Table-tr {
   padding-bottom: 10px;
   border-bottom: 1px solid var(--mantine-color-sand-2);
 }
+/* Sticky header on every table — a long list (Employees, Payslips, the
+   payroll run table) stays legible without scrolling back up to see what a
+   column means. Solid background so scrolled-past rows don't show through;
+   z-index keeps it above the row content, not above menus/modals. */
+.mantine-Table-thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--mantine-color-white);
+}
 .mantine-Table-tbody .mantine-Table-tr .mantine-Table-td {
   border-bottom: 1px solid var(--mantine-color-sand-1);
 }

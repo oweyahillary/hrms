@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import {
-  Alert, Anchor, Badge, Button, Card, Grid, Group, List, Modal, MultiSelect, ActionIcon,
+  Alert, Anchor, Badge, Box, Button, Card, Grid, Group, List, Modal, MultiSelect, ActionIcon,
   Select, Skeleton, Stack, Switch, Table, Text, ThemeIcon, Title, Tooltip,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
@@ -21,6 +21,7 @@ import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { canManageEmployees } from '../auth/roles';
 import { ErrorCard } from '../components/ErrorCard';
+import { kes } from '../utils/money';
 
 const STATUS_COLOR: Record<PayrollRunStatus, string> = {
   DRAFT: 'amber', PROCESSING: 'amber', FINALIZED: 'brand', PAID: 'sand',
@@ -35,10 +36,6 @@ const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
-
-function fmtKES(n: number): string {
-  return `KES ${n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
 
 function fmtDateTime(iso: string): string {
   const d = new Date(iso);
@@ -300,7 +297,7 @@ export function PayrollRunDetailPage() {
         color: res.warnings.length ? 'amber' : 'brand',
         icon: <IconCheck size={16} />,
         title: 'Bank export generated',
-        message: `${res.included} payment(s), ${fmtKES(res.totalAmount)}${res.skipped.length ? `, ${res.skipped.length} skipped` : ''}.`,
+        message: `${res.included} payment(s), ${kes(res.totalAmount)}${res.skipped.length ? `, ${res.skipped.length} skipped` : ''}.`,
       });
     } catch (e) {
       setExportError(e instanceof ApiError ? e.message : 'Could not generate the bank export.');
@@ -443,7 +440,7 @@ export function PayrollRunDetailPage() {
               <>{deferredDeductions.length} one-off deduction(s) were deferred </>
             )}
             to keep take-home pay at or above one-third of basic salary —
-            {' '}{fmtKES(carriedForwardTotal)} carried forward. Hover a deductions figure for the per-line detail.
+            {' '}{kes(carriedForwardTotal)} carried forward. Hover a deductions figure for the per-line detail.
           </Text>
           {deferredDeductions.length > 0 && (
             <List size="sm">
@@ -451,7 +448,7 @@ export function PayrollRunDetailPage() {
                 const info = empLabel(d.employeeId);
                 return (
                   <List.Item key={d.id}>
-                    {info.name} · {info.number} — {fmtKES(d.amount)}{d.reason ? ` (${d.reason})` : ''} deferred, still pending
+                    {info.name} · {info.number} — {kes(d.amount)}{d.reason ? ` (${d.reason})` : ''} deferred, still pending
                   </List.Item>
                 );
               })}
@@ -461,12 +458,12 @@ export function PayrollRunDetailPage() {
       )}
 
       <Grid gutter="md">
-        <Grid.Col span={{ base: 6, sm: 4, lg: 2 }}><StatTile label="Gross" value={fmtKES(run.totals.gross)} icon={IconCoin} color="brand" /></Grid.Col>
-        <Grid.Col span={{ base: 6, sm: 4, lg: 2 }}><StatTile label="PAYE" value={fmtKES(run.totals.paye)} icon={IconReceipt2} color="sand" /></Grid.Col>
-        <Grid.Col span={{ base: 6, sm: 4, lg: 2 }}><StatTile label="NSSF" value={fmtKES(run.totals.nssf)} icon={IconReceipt2} color="sand" /></Grid.Col>
-        <Grid.Col span={{ base: 6, sm: 4, lg: 2 }}><StatTile label="SHIF" value={fmtKES(run.totals.shif)} icon={IconReceipt2} color="sand" /></Grid.Col>
-        <Grid.Col span={{ base: 6, sm: 4, lg: 2 }}><StatTile label="AHL" value={fmtKES(run.totals.ahl)} icon={IconReceipt2} color="sand" /></Grid.Col>
-        <Grid.Col span={{ base: 6, sm: 4, lg: 2 }}><StatTile label="Net" value={fmtKES(run.totals.net)} icon={IconWallet} color="brand" /></Grid.Col>
+        <Grid.Col span={{ base: 6, sm: 4, lg: 2 }}><StatTile label="Gross" value={kes(run.totals.gross)} icon={IconCoin} color="brand" /></Grid.Col>
+        <Grid.Col span={{ base: 6, sm: 4, lg: 2 }}><StatTile label="PAYE" value={kes(run.totals.paye)} icon={IconReceipt2} color="sand" /></Grid.Col>
+        <Grid.Col span={{ base: 6, sm: 4, lg: 2 }}><StatTile label="NSSF" value={kes(run.totals.nssf)} icon={IconReceipt2} color="sand" /></Grid.Col>
+        <Grid.Col span={{ base: 6, sm: 4, lg: 2 }}><StatTile label="SHIF" value={kes(run.totals.shif)} icon={IconReceipt2} color="sand" /></Grid.Col>
+        <Grid.Col span={{ base: 6, sm: 4, lg: 2 }}><StatTile label="AHL" value={kes(run.totals.ahl)} icon={IconReceipt2} color="sand" /></Grid.Col>
+        <Grid.Col span={{ base: 6, sm: 4, lg: 2 }}><StatTile label="Net" value={kes(run.totals.net)} icon={IconWallet} color="brand" /></Grid.Col>
       </Grid>
 
       {run.status === 'FINALIZED' && (
@@ -555,6 +552,7 @@ export function PayrollRunDetailPage() {
 
       <Card p="lg" radius="md">
         <Title order={3} mb="md">Payslips</Title>
+        <Box visibleFrom="sm">
         <Table.ScrollContainer minWidth={960}>
           <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover>
             <Table.Thead>
@@ -580,18 +578,18 @@ export function PayrollRunDetailPage() {
                 const info = empLabel(p.employeeId);
                 const bonusLines = p.adjustments
                   .filter((a) => a.type === 'BONUS')
-                  .map((a) => `+${fmtKES(a.amount)} — ${a.reason ?? 'Bonus'}`);
+                  .map((a) => `+${kes(a.amount)} — ${a.reason ?? 'Bonus'}`);
                 const deductionLines = [
                   ...p.loanRepayments.map((r) => {
                     if (r.amount === 0 && r.deferredAmount > 0) {
-                      return `Loan/advance installment of ${fmtKES(r.scheduledAmount)} withheld — carried forward (one-third floor)`;
+                      return `Loan/advance installment of ${kes(r.scheduledAmount)} withheld — carried forward (one-third floor)`;
                     }
                     if (r.deferredAmount > 0) {
-                      return `-${fmtKES(r.amount)} — Loan/advance repayment (reduced from ${fmtKES(r.scheduledAmount)}; ${fmtKES(r.deferredAmount)} carried forward — one-third floor)`;
+                      return `-${kes(r.amount)} — Loan/advance repayment (reduced from ${kes(r.scheduledAmount)}; ${kes(r.deferredAmount)} carried forward — one-third floor)`;
                     }
-                    return `-${fmtKES(r.amount)} — Loan/advance repayment`;
+                    return `-${kes(r.amount)} — Loan/advance repayment`;
                   }),
-                  ...p.adjustments.filter((a) => a.type === 'DEDUCTION').map((a) => `-${fmtKES(a.amount)} — ${a.reason ?? 'Deduction'}`),
+                  ...p.adjustments.filter((a) => a.type === 'DEDUCTION').map((a) => `-${kes(a.amount)} — ${a.reason ?? 'Deduction'}`),
                 ];
                 return (
                   <Table.Tr key={p.id}>
@@ -599,13 +597,13 @@ export function PayrollRunDetailPage() {
                       <Text size="sm" fw={600}>{info.name}</Text>
                       <Text size="xs" c="sand.6" ff="monospace">{info.number}</Text>
                     </Table.Td>
-                    <Table.Td><BreakdownText value={fmtKES(p.grossPay)} lines={bonusLines} /></Table.Td>
-                    <Table.Td><Text size="sm">{fmtKES(p.paye)}</Text></Table.Td>
-                    <Table.Td><Text size="sm">{fmtKES(p.nssfEmployee)}</Text></Table.Td>
-                    <Table.Td><Text size="sm">{fmtKES(p.shif)}</Text></Table.Td>
-                    <Table.Td><Text size="sm">{fmtKES(p.ahlEmployee)}</Text></Table.Td>
-                    <Table.Td><BreakdownText value={fmtKES(p.otherDeductions)} lines={deductionLines} /></Table.Td>
-                    <Table.Td><Text size="sm" fw={700}>{fmtKES(p.netPay)}</Text></Table.Td>
+                    <Table.Td><BreakdownText value={kes(p.grossPay)} lines={bonusLines} /></Table.Td>
+                    <Table.Td><Text size="sm">{kes(p.paye)}</Text></Table.Td>
+                    <Table.Td><Text size="sm">{kes(p.nssfEmployee)}</Text></Table.Td>
+                    <Table.Td><Text size="sm">{kes(p.shif)}</Text></Table.Td>
+                    <Table.Td><Text size="sm">{kes(p.ahlEmployee)}</Text></Table.Td>
+                    <Table.Td><BreakdownText value={kes(p.otherDeductions)} lines={deductionLines} /></Table.Td>
+                    <Table.Td><Text size="sm" fw={700}>{kes(p.netPay)}</Text></Table.Td>
                     <Table.Td>
                       {p.oneThirdRulePass ? (
                         <Badge variant="light" size="sm" color="brand">Pass</Badge>
@@ -624,6 +622,48 @@ export function PayrollRunDetailPage() {
             </Table.Tbody>
           </Table>
         </Table.ScrollContainer>
+        </Box>
+
+        {/* Below sm: one card per payslip instead of a 10-column table forced into
+            horizontal scroll at every width. */}
+        <Stack hiddenFrom="sm" gap="sm">
+          {run.payslips.map((p) => {
+            const info = empLabel(p.employeeId);
+            const deductionCount = p.loanRepayments.length + p.adjustments.filter((a) => a.type === 'DEDUCTION').length;
+            return (
+              <Card key={p.id} p="md" radius="md" withBorder>
+                <Group justify="space-between" align="flex-start" wrap="nowrap">
+                  <div>
+                    <Text size="sm" fw={600}>{info.name}</Text>
+                    <Text size="xs" c="sand.6" ff="monospace">{info.number}</Text>
+                  </div>
+                  {p.oneThirdRulePass ? (
+                    <Badge variant="light" size="sm" color="brand">Pass</Badge>
+                  ) : (
+                    <Badge variant="light" size="sm" color="red" style={{ whiteSpace: 'nowrap' }}>Fails 1/3 rule</Badge>
+                  )}
+                </Group>
+                <Group gap="lg" mt="sm">
+                  <div>
+                    <Text size="xs" c="sand.6">Gross</Text>
+                    <Text size="sm">{kes(p.grossPay)}</Text>
+                  </div>
+                  <div>
+                    <Text size="xs" c="sand.6">Deductions{deductionCount > 0 ? ` (${deductionCount})` : ''}</Text>
+                    <Text size="sm">{kes(p.paye + p.nssfEmployee + p.shif + p.ahlEmployee + p.otherDeductions)}</Text>
+                  </div>
+                  <div>
+                    <Text size="xs" c="sand.6">Net</Text>
+                    <Text size="sm" fw={700}>{kes(p.netPay)}</Text>
+                  </div>
+                </Group>
+                <Group justify="flex-end" mt="sm">
+                  <PdfCell payslip={p} downloading={downloadingPdfId === p.id} onDownload={(ps) => void downloadPdf(ps)} />
+                </Group>
+              </Card>
+            );
+          })}
+        </Stack>
       </Card>
 
       {/* Finalize confirmation */}

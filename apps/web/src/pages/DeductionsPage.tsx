@@ -12,9 +12,7 @@ import { cancelPayrollAdjustment, ADJUSTMENT_STATUSES } from '../api/payrollAdju
 import { loadEmployeeOptions, type EmployeeOption } from '../api/employee-options';
 import { ApiError } from '../api/client';
 import { ErrorCard } from '../components/ErrorCard';
-
-const kes = (n: number): string =>
-  n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+import { kes } from '../utils/money';
 
 const STATUS_COLOR: Record<string, string> = { PENDING: 'amber', APPLIED: 'brand', CANCELLED: 'red' };
 
@@ -117,11 +115,11 @@ export function DeductionsPage() {
           <Group gap="xl">
             <div>
               <Text size="xs" c="sand.6" tt="uppercase" fw={600}>Bonuses</Text>
-              <Text fw={700} size="xl">KES {kes(register.totals.totalBonuses)}</Text>
+              <Text fw={700} size="xl">{kes(register.totals.totalBonuses)}</Text>
             </div>
             <div>
               <Text size="xs" c="sand.6" tt="uppercase" fw={600}>Deductions</Text>
-              <Text fw={700} size="xl">KES {kes(register.totals.totalDeductions)}</Text>
+              <Text fw={700} size="xl">{kes(register.totals.totalDeductions)}</Text>
             </div>
             <div>
               <Text size="xs" c="sand.6" tt="uppercase" fw={600}>Records</Text>

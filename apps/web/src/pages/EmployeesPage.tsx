@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActionIcon, Anchor, Avatar, Badge, Button, Card, Center, Group, Pagination, Select, Skeleton,
+  ActionIcon, Anchor, Avatar, Badge, Box, Button, Card, Center, Group, Pagination, Select, Skeleton,
   Stack, Table, Text, TextInput, Title, UnstyledButton,
 } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
@@ -345,36 +345,73 @@ export function EmployeesPage() {
           <ErrorCard message={error} onRetry={() => setReloadKey((k) => k + 1)} retrying={loading} />
         ) : (
           <>
-            <Table.ScrollContainer minWidth={520}>
-              <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover={!loading}>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>
-                      <SortHeader
-                        label="Name" active={sort === 'name'} order={order}
-                        onSort={() => toggleSort('name')}
-                      />
-                    </Table.Th>
-                    <Table.Th w={150}>
-                      <SortHeader
-                        label="Employee no." active={sort === 'employeeNumber'} order={order}
-                        onSort={() => toggleSort('employeeNumber')}
-                      />
-                    </Table.Th>
-                    <Table.Th visibleFrom="md">Department</Table.Th>
-                    <Table.Th visibleFrom="lg">Job title</Table.Th>
-                    <Table.Th visibleFrom="sm" w={130}>
-                      <SortHeader
-                        label="Hired" active={sort === 'hireDate'} order={order}
-                        onSort={() => toggleSort('hireDate')}
-                      />
-                    </Table.Th>
-                    <Table.Th w={110}>Status</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>{body()}</Table.Tbody>
-              </Table>
-            </Table.ScrollContainer>
+            <Box visibleFrom="sm">
+              <Table.ScrollContainer minWidth={520}>
+                <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover={!loading}>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>
+                        <SortHeader
+                          label="Name" active={sort === 'name'} order={order}
+                          onSort={() => toggleSort('name')}
+                        />
+                      </Table.Th>
+                      <Table.Th w={150}>
+                        <SortHeader
+                          label="Employee no." active={sort === 'employeeNumber'} order={order}
+                          onSort={() => toggleSort('employeeNumber')}
+                        />
+                      </Table.Th>
+                      <Table.Th visibleFrom="md">Department</Table.Th>
+                      <Table.Th visibleFrom="lg">Job title</Table.Th>
+                      <Table.Th visibleFrom="sm" w={130}>
+                        <SortHeader
+                          label="Hired" active={sort === 'hireDate'} order={order}
+                          onSort={() => toggleSort('hireDate')}
+                        />
+                      </Table.Th>
+                      <Table.Th w={110}>Status</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>{body()}</Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            </Box>
+
+            {/* Below sm: stacked cards instead of a horizontally-scrolling table —
+                every column that mattered on desktop is still here, just vertical. */}
+            <Stack hiddenFrom="sm" gap="sm">
+              {loading && Array.from({ length: 4 }, (_, i) => (
+                <Card key={`ms${i}`} p="md" radius="md">
+                  <Skeleton h={14} w="60%" radius="sm" mb={8} />
+                  <Skeleton h={12} w="40%" radius="sm" />
+                </Card>
+              ))}
+              {!loading && rows.map((r) => (
+                <Card
+                  key={r.id} p="md" radius="md" style={{ cursor: 'pointer' }}
+                  onClick={() => navigate(`/employees/${r.id}`, { state: { from: listUrl } })}
+                >
+                  <Group justify="space-between" align="flex-start" wrap="nowrap">
+                    <Group gap="sm" wrap="nowrap">
+                      <Avatar radius="xl" size={32} color="brand" variant="light">{initialsOf(r.fullName)}</Avatar>
+                      <div>
+                        <Text size="sm" fw={600}>{r.fullName}</Text>
+                        <Text size="xs" c="sand.6" ff="monospace">{r.employeeNumber}</Text>
+                      </div>
+                    </Group>
+                    <Badge variant="light" size="sm" color={STATUS_COLOR[r.employmentStatus] ?? 'sand'}>
+                      {STATUS_LABEL[r.employmentStatus] ?? r.employmentStatus}
+                    </Badge>
+                  </Group>
+                  <Group gap="xs" mt="sm">
+                    <Text size="xs" c="sand.6">
+                      {(r.departmentId && deptNames.get(r.departmentId)) || 'Unassigned'} · Hired {fmtDate(r.hireDate)}
+                    </Text>
+                  </Group>
+                </Card>
+              ))}
+            </Stack>
 
             {!loading && rows.length === 0 && (
               <Center py={48}>
