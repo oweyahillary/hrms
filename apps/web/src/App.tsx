@@ -30,6 +30,9 @@ import { SettingsNumberingPage } from './pages/SettingsNumberingPage';
 import { SettingsPayrollPage } from './pages/SettingsPayrollPage';
 import { UsersPage } from './pages/UsersPage';
 import { InviteUserPage } from './pages/InviteUserPage';
+import { MyPayslipsPage } from './pages/MyPayslipsPage';
+import { MyLeavePage } from './pages/MyLeavePage';
+import { MyProfilePage } from './pages/MyProfilePage';
 
 export function App() {
   return (
@@ -70,6 +73,9 @@ export function App() {
                 <Route path="/settings/payroll" element={<SettingsPayrollPage />} />
                 <Route path="/settings/users" element={<UsersPage />} />
                 <Route path="/settings/users/new" element={<InviteUserPage />} />
+                <Route path="/me/payslips" element={<MyPayslipsPage />} />
+                <Route path="/me/leave" element={<MyLeavePage />} />
+                <Route path="/me/profile" element={<MyProfilePage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </AppShellLayout>
