@@ -1,5 +1,6 @@
-import { Controller, Get, Param, Query, StreamableFile } from '@nestjs/common';
+import { Controller, Get, Param, Query, Res, StreamableFile } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { SelfServiceService } from './self-service.service';
 import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.decorator';
 
@@ -43,6 +44,25 @@ export class SelfServiceController {
   @Get('shifts')
   shifts(@CurrentUser() user: AuthUser, @Query('from') from: string, @Query('to') to: string) {
     return this.selfService.getShifts(user.userId, from, to);
+  }
+
+  @Get('documents')
+  documents(@CurrentUser() user: AuthUser) {
+    return this.selfService.listDocuments(user.userId);
+  }
+
+  @Get('documents/:docId/download')
+  async documentDownload(
+    @Param('docId') docId: string,
+    @CurrentUser() user: AuthUser,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const f = await this.selfService.getDocumentDownload(user.userId, docId, user);
+    res.set({
+      'Content-Type': f.contentType,
+      'Content-Disposition': `attachment; filename="${f.filename}"`,
+    });
+    return new StreamableFile(f.buffer);
   }
 
   @Get('attendance')

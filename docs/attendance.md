@@ -7,8 +7,14 @@ employee per day — writes upsert that day's record rather than duplicating it.
 
 - `POST /api/attendance` — upsert one day: `{ employeeId, date, clockIn?, clockOut?, status? }`.
   `status` defaults to `PRESENT` if a clock-in is present, else `ABSENT`.
-- `GET  /api/attendance?employeeId=&from=&to=` — records in a date range.
+- `GET  /api/attendance?employeeId=&from=&to=` — records in a date range for one employee.
+  `employeeId` is optional: omit it for an org-wide register over the range instead
+  (still tenant-bounded via attendanceRecord's own organizationId), optionally
+  narrowed with `departmentId` (ignored if `employeeId` is set).
 - `POST /api/attendance/import` — multipart CSV upload (`file`), source `BIOMETRIC`.
+- `GET /api/me/attendance?from=&to=` — the caller's own records for the range
+  (self-service; employeeId is resolved from the JWT, never client-supplied —
+  see `docs/spine.md` / `src/self-service`).
 
 ## CSV format
 

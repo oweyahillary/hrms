@@ -5,6 +5,7 @@ import { PayslipPdfService } from '../payroll/payslip-pdf.service';
 import { LeaveRequestsService } from '../leave/leave-requests.service';
 import { LeaveBalancesService } from '../leave/leave-balances.service';
 import { ShiftRosterService } from '../shifts/shift-roster.service';
+import { EmployeeDocumentsService } from '../employees/employee-documents.service';
 import { AttendanceService } from '../attendance/attendance.service';
 import type { AuthUser } from '../auth/decorators/current-user.decorator';
 
@@ -40,6 +41,7 @@ export class SelfServiceService {
     private readonly leaveRequests: LeaveRequestsService,
     private readonly leaveBalances: LeaveBalancesService,
     private readonly shiftRoster: ShiftRosterService,
+    private readonly documents: EmployeeDocumentsService,
     private readonly attendance: AttendanceService,
   ) {}
 
@@ -163,6 +165,17 @@ export class SelfServiceService {
   async getShifts(userId: string, from: string, to: string) {
     const employeeId = await this.resolveEmployeeId(userId);
     return this.shiftRoster.getEmployeeRoster(employeeId, from, to);
+  }
+
+  async listDocuments(userId: string) {
+    const employeeId = await this.resolveEmployeeId(userId);
+    return this.documents.list(employeeId);
+  }
+
+  /** Ownership is enforced inside EmployeeDocumentsService.download by (id, employeeId) match — a mismatch 404s. */
+  async getDocumentDownload(userId: string, docId: string, actor: AuthUser) {
+    const employeeId = await this.resolveEmployeeId(userId);
+    return this.documents.download(employeeId, docId, actor);
   }
 
   async getAttendance(userId: string, from?: string, to?: string) {
