@@ -44,3 +44,4 @@ apps/api/salary.xlsx
 dev_docs/
 .claude/settings.local.json
 .vscode/
+.vscode/
