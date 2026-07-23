@@ -10,6 +10,8 @@ import { getMyProfile, type MyProfile } from '../api/self-service';
 import {
   getDepartments, getJobTitles, departmentMap, jobTitleMap,
 } from '../api/lookups';
+import { ErrorCard } from '../components/ErrorCard';
+import { formatDate as fmtDate } from '../utils/date';
 
 const STATUS_COLOR: Record<string, string> = {
   ACTIVE: 'brand', ON_LEAVE: 'amber', SUSPENDED: 'red', EXITED: 'sand',
@@ -20,14 +22,6 @@ const STATUS_LABEL: Record<string, string> = {
 const TYPE_LABEL: Record<string, string> = {
   PERMANENT: 'Permanent', CONTRACT: 'Contract', CASUAL: 'Casual', INTERN: 'Intern',
 };
-
-/** @db.Date values arrive at UTC midnight — format in UTC or they shift a day. */
-function fmtDate(iso: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
-}
 
 /**
  * The API sends this back fully decrypted — that's correct here, it's your
@@ -97,9 +91,11 @@ export function MyProfilePage() {
   const [titleNames, setTitleNames] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setError(null);
     void (async () => {
       try {
         const [me, depts, titles] = await Promise.all([
@@ -114,7 +110,7 @@ export function MyProfilePage() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [reloadKey]);
 
   const sensitive = useMemo(() => {
     if (!profile) return { nationalId: '—', kraPin: '—', bankAccountNumber: '—' };
@@ -129,8 +125,8 @@ export function MyProfilePage() {
   if (error) {
     return (
       <Stack gap="lg">
-        <Title order={1}>My Profile</Title>
-        <Card p="lg" radius="md"><Text size="sm" c="red">{error}</Text></Card>
+        <Title order={1}>My profile</Title>
+        <ErrorCard message={error} onRetry={() => setReloadKey((k) => k + 1)} />
       </Stack>
     );
   }
@@ -138,7 +134,7 @@ export function MyProfilePage() {
   if (!profile) {
     return (
       <Stack gap="lg">
-        <Title order={1}>My Profile</Title>
+        <Title order={1}>My profile</Title>
         <Card p="lg" radius="md"><Skeleton h={200} radius="sm" /></Card>
       </Stack>
     );
@@ -150,7 +146,7 @@ export function MyProfilePage() {
   return (
     <Stack gap="lg">
       <div>
-        <Title order={1}>My Profile</Title>
+        <Title order={1}>My profile</Title>
         <Text c="sand.6" mt={4}>
           Read-only — if anything here is wrong, ask HR to update it.
         </Text>

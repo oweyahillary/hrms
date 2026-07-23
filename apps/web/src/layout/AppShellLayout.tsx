@@ -72,17 +72,17 @@ const HR_NAV: NavItem[] = [
  * "Apply for leave" is a sibling child instead.
  */
 const SELF_SERVICE_NAV: NavItem[] = [
-  { to: '/me/payslips', label: 'My Payslips', icon: IconReceipt2 },
+  { to: '/me/payslips', label: 'My payslips', icon: IconReceipt2 },
   {
     to: '/me/leave',
-    label: 'My Leave',
+    label: 'My leave',
     icon: IconCalendarStats,
     children: [
       { to: '/me/leave', label: 'My requests', exact: true },
       { to: '/leave/apply', label: 'Apply for leave' },
     ],
   },
-  { to: '/me/profile', label: 'My Profile', icon: IconUserCircle },
+  { to: '/me/profile', label: 'My profile', icon: IconUserCircle },
 ];
 
 const MY_SPACE_NAV: NavItem[] = [
@@ -91,10 +91,10 @@ const MY_SPACE_NAV: NavItem[] = [
     label: 'My space',
     icon: IconUser,
     children: [
-      { to: '/me/payslips', label: 'My Payslips' },
-      { to: '/me/leave', label: 'My Leave', exact: true },
+      { to: '/me/payslips', label: 'My payslips' },
+      { to: '/me/leave', label: 'My leave', exact: true },
       { to: '/leave/apply', label: 'Apply for leave' },
-      { to: '/me/profile', label: 'My Profile' },
+      { to: '/me/profile', label: 'My profile' },
     ],
   },
 ];

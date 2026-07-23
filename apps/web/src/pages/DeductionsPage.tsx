@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import {
-  Alert, Badge, Button, Card, Group, Select, Skeleton, Stack, Table, Text, Title,
+  Badge, Button, Card, Group, Select, Skeleton, Stack, Table, Text, Title,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconAlertTriangle, IconCheck, IconPlus, IconDownload } from '@tabler/icons-react';
@@ -11,9 +11,8 @@ import {
 import { cancelPayrollAdjustment, ADJUSTMENT_STATUSES } from '../api/payrollAdjustments';
 import { loadEmployeeOptions, type EmployeeOption } from '../api/employee-options';
 import { ApiError } from '../api/client';
-
-const kes = (n: number): string =>
-  n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+import { ErrorCard } from '../components/ErrorCard';
+import { kes } from '../utils/money';
 
 const STATUS_COLOR: Record<string, string> = { PENDING: 'amber', APPLIED: 'brand', CANCELLED: 'red' };
 
@@ -109,18 +108,18 @@ export function DeductionsPage() {
         />
       </Group>
 
-      {error && <Alert color="red" variant="light" icon={<IconAlertTriangle size={16} />}>{error}</Alert>}
+      {error && <ErrorCard message={error} onRetry={() => void load()} retrying={loading} />}
 
-      {register && !loading && (
+      {!error && register && !loading && (
         <Card p="md" radius="md" withBorder>
           <Group gap="xl">
             <div>
               <Text size="xs" c="sand.6" tt="uppercase" fw={600}>Bonuses</Text>
-              <Text fw={700} size="xl">KES {kes(register.totals.totalBonuses)}</Text>
+              <Text fw={700} size="xl">{kes(register.totals.totalBonuses)}</Text>
             </div>
             <div>
               <Text size="xs" c="sand.6" tt="uppercase" fw={600}>Deductions</Text>
-              <Text fw={700} size="xl">KES {kes(register.totals.totalDeductions)}</Text>
+              <Text fw={700} size="xl">{kes(register.totals.totalDeductions)}</Text>
             </div>
             <div>
               <Text size="xs" c="sand.6" tt="uppercase" fw={600}>Records</Text>
@@ -130,7 +129,7 @@ export function DeductionsPage() {
         </Card>
       )}
 
-      <Card p={0} radius="md" withBorder>
+      {!error && <Card p={0} radius="md" withBorder>
         <Table striped highlightOnHover verticalSpacing="sm">
           <Table.Thead>
             <Table.Tr>
@@ -183,7 +182,7 @@ export function DeductionsPage() {
             ))}
           </Table.Tbody>
         </Table>
-      </Card>
+      </Card>}
     </Stack>
   );
 }

@@ -10,6 +10,8 @@ import {
 import { getMyLeave } from '../api/self-service';
 import { cancelLeave, type LeaveBalance, type LeaveRequest } from '../api/leave';
 import { ApiError } from '../api/client';
+import { ErrorCard } from '../components/ErrorCard';
+import { formatDate as fmtDate } from '../utils/date';
 
 const STATUS_COLOR: Record<string, string> = {
   PENDING: 'amber', APPROVED: 'brand', REJECTED: 'red', CANCELLED: 'sand',
@@ -18,12 +20,6 @@ const STATUS_LABEL: Record<string, string> = {
   PENDING: 'Pending', APPROVED: 'Approved', REJECTED: 'Rejected', CANCELLED: 'Cancelled',
 };
 
-/** Dates are @db.Date at UTC midnight — format in UTC or they shift a day. */
-function fmtDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
-}
 function fmtRange(start: string, end: string): string {
   return start.slice(0, 10) === end.slice(0, 10) ? fmtDate(start) : `${fmtDate(start)} – ${fmtDate(end)}`;
 }
@@ -71,7 +67,7 @@ export function MyLeavePage() {
     <Stack gap="lg">
       <Group justify="space-between" align="flex-end" wrap="wrap" gap="sm">
         <div>
-          <Title order={1}>My Leave</Title>
+          <Title order={1}>My leave</Title>
           <Text c="sand.6" mt={4}>Your balances and every request you&apos;ve made</Text>
         </div>
         <Button component={Link} to="/leave/apply" leftSection={<IconPlus size={16} />}>
@@ -136,7 +132,7 @@ export function MyLeavePage() {
         <Text fw={600} mb="md">My requests</Text>
 
         {error ? (
-          <Center py={48}><Text size="sm" c="sand.7" maw={420} ta="center">{error}</Text></Center>
+          <ErrorCard message={error} onRetry={() => void load()} retrying={requests === null} />
         ) : (
           <>
             <Table.ScrollContainer minWidth={520}>

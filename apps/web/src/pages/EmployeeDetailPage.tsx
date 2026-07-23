@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import {
-  Anchor, Avatar, Badge, Button, Card, Center, CopyButton, Grid, Group, Modal, Select, Skeleton,
+  Anchor, Avatar, Badge, Button, Card, CopyButton, Grid, Group, Modal, Select, Skeleton,
   Stack, Text, TextInput, ThemeIcon, Title, Tooltip,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
@@ -20,8 +20,10 @@ import {
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { canManageEmployees } from '../auth/roles';
+import { ErrorCard } from '../components/ErrorCard';
 import { SalarySection } from '../components/SalarySection';
 import { SeveranceSection } from '../components/SeveranceSection';
+import { formatDate as fmtDate } from '../utils/date';
 
 const STATUS_COLOR: Record<string, string> = {
   ACTIVE: 'brand', ON_LEAVE: 'amber', SUSPENDED: 'red', EXITED: 'sand',
@@ -33,15 +35,6 @@ const TYPE_LABEL: Record<string, string> = {
   PERMANENT: 'Permanent', CONTRACT: 'Contract', CASUAL: 'Casual', INTERN: 'Intern',
 };
 
-/** @db.Date values arrive at UTC midnight — format in UTC or they shift a day. */
-function fmtDate(iso: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC',
-  });
-}
 
 /**
  * Mirrors the API's maskLast4. Used only to re-hide values the server already
@@ -136,6 +129,7 @@ export function EmployeeDetailPage() {
   const [loginResult, setLoginResult] = useState<CreateLoginResult | null>(null);
   const [deptNames, setDeptNames] = useState<Map<string, string>>(new Map());
   const [titleNames, setTitleNames] = useState<Map<string, string>>(new Map());
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,7 +154,7 @@ export function EmployeeDetailPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, reloadKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -213,17 +207,10 @@ export function EmployeeDetailPage() {
     return (
       <Stack gap="lg">
         {back}
-        <Card p="xl" radius="md">
-          <Center py={32}>
-            <Stack gap={8} align="center">
-              <Text fw={600}>Record unavailable</Text>
-              <Text size="sm" c="sand.6" maw={420} ta="center">{error}</Text>
-              <Button component={Link} to={from} variant="light" mt="sm">
-                Back to employees
-              </Button>
-            </Stack>
-          </Center>
-        </Card>
+        <ErrorCard
+          message={error ?? 'That employee record does not exist, or is not part of this organisation.'}
+          onRetry={() => setReloadKey((k) => k + 1)} retrying={loading}
+        />
       </Stack>
     );
   }

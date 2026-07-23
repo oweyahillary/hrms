@@ -16,12 +16,11 @@ import {
 } from '../api/employees';
 import { getDepartments, getJobTitles, type Option } from '../api/lookups';
 import { ApiError } from '../api/client';
-import { useAuth } from '../auth/AuthContext';
-import { canManageEmployees } from '../auth/roles';
 import {
   KENYA_PHONE_REGEX, KRA_PIN_REGEX, NATIONAL_ID_REGEX, errors as msg,
   normalizeKraPin, normalizePhone,
 } from '../validation/kenya';
+import { useUnsavedChangesWarning } from '../hooks/useUnsavedChangesWarning';
 
 /** Small icon + heading pairing shared by every form section card on this page. */
 function SectionTitle({ icon: SectionIcon, children }: { icon: Icon; children: React.ReactNode }) {
@@ -85,8 +84,6 @@ const kinField = (kin: unknown, key: string): string => {
 export function EmployeeEditPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const allowed = canManageEmployees(user?.role);
 
   const [emp, setEmp] = useState<EmployeeDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -119,6 +116,7 @@ export function EmployeeEditPage() {
       employmentType: (v) => (v ? null : 'Pick an employment type'),
     },
   });
+  useUnsavedChangesWarning(form.isDirty());
 
   useEffect(() => {
     let cancelled = false;
@@ -264,18 +262,6 @@ export function EmployeeEditPage() {
       <Group gap={4}><IconArrowLeft size={14} /> Back to record</Group>
     </Anchor>
   );
-
-  if (!allowed) {
-    return (
-      <Stack gap="lg">
-        {back}
-        <Card p="xl" radius="md">
-          <Title order={3}>You can&apos;t edit employees</Title>
-          <Text c="sand.6" mt="xs">Editing employee records needs an HR role.</Text>
-        </Card>
-      </Stack>
-    );
-  }
 
   if (loading) {
     return (

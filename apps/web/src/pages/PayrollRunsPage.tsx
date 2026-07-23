@@ -8,6 +8,7 @@ import { listPayrollRuns, type PayrollRunListItem, type PayrollRunStatus, type P
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { canManageEmployees } from '../auth/roles';
+import { ErrorCard } from '../components/ErrorCard';
 
 const STATUS_COLOR: Record<PayrollRunStatus, string> = {
   DRAFT: 'amber', PROCESSING: 'amber', FINALIZED: 'brand', PAID: 'sand',
@@ -37,10 +38,12 @@ export function PayrollRunsPage() {
   const [runs, setRuns] = useState<PayrollRunListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!allowed) { setLoading(false); return; }
     let cancelled = false;
+    setLoading(true);
     void (async () => {
       try {
         const rows = await listPayrollRuns();
@@ -55,24 +58,7 @@ export function PayrollRunsPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [allowed]);
-
-  if (!allowed) {
-    return (
-      <Stack gap="lg">
-        <div>
-          <Title order={1}>Payroll</Title>
-          <Text c="sand.6" mt={4}>Payroll runs, payslips and statutory deductions</Text>
-        </div>
-        <Card p="xl" radius="md">
-          <Title order={3}>You can&apos;t view payroll</Title>
-          <Text c="sand.6" mt="xs">
-            Payroll needs an HR role. Ask an administrator for access.
-          </Text>
-        </Card>
-      </Stack>
-    );
-  }
+  }, [allowed, reloadKey]);
 
   return (
     <Stack gap="lg">
@@ -88,7 +74,7 @@ export function PayrollRunsPage() {
 
       <Card p="lg" radius="md">
         {error ? (
-          <Center py={48}><Text size="sm" c="sand.7" maw={420} ta="center">{error}</Text></Center>
+          <ErrorCard message={error} onRetry={() => setReloadKey((k) => k + 1)} retrying={loading} />
         ) : (
           <>
             <Table.ScrollContainer minWidth={640}>

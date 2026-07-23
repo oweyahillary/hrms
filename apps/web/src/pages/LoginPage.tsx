@@ -25,6 +25,7 @@ export function LoginPage() {
   useEffect(() => { void ssoConfig().then((c) => setSsoEnabled(c.enabled)); }, []);
 
   const form = useForm({
+    validateInputOnBlur: true,
     initialValues: { email: '', password: '' },
     validate: {
       email: (v) => (/^\S+@\S+\.\S+$/.test(v) ? null : 'Enter a valid email'),

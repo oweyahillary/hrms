@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import {
-  Alert, Badge, Button, Card, Group, Modal, Select, Skeleton, Stack, Table, Text, Title,
+  Badge, Button, Card, Group, Modal, Select, Skeleton, Stack, Table, Text, Title,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconAlertTriangle, IconCheck, IconPlus } from '@tabler/icons-react';
@@ -10,6 +10,7 @@ import {
 } from '../api/users';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../api/client';
+import { ErrorCard } from '../components/ErrorCard';
 
 const STATUS_FILTERS = [
   { value: 'true', label: 'Active' },
@@ -126,9 +127,9 @@ export function UsersPage() {
         />
       </Group>
 
-      {error && <Alert color="red" variant="light" icon={<IconAlertTriangle size={16} />}>{error}</Alert>}
+      {error && <ErrorCard message={error} onRetry={() => void load()} retrying={loading} />}
 
-      <Card p={0} radius="md" withBorder>
+      {!error && <Card p={0} radius="md" withBorder>
         <Table striped highlightOnHover verticalSpacing="sm">
           <Table.Thead>
             <Table.Tr>
@@ -192,7 +193,7 @@ export function UsersPage() {
             })}
           </Table.Tbody>
         </Table>
-      </Card>
+      </Card>}
 
       {/* Deactivate needs a confirm — it blocks the person's login. */}
       <Modal opened={!!confirmUser} onClose={() => setConfirmUser(null)} title="Deactivate user" centered>

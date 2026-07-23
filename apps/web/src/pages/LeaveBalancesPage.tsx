@@ -16,6 +16,7 @@ import { listEmployees, type EmployeeListRow } from '../api/employees';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { canManageEmployees } from '../auth/roles';
+import { ErrorCard } from '../components/ErrorCard';
 
 const YEAR_NOW = new Date().getUTCFullYear();
 const YEARS = [YEAR_NOW - 2, YEAR_NOW - 1, YEAR_NOW, YEAR_NOW + 1].map((y) => ({
@@ -181,9 +182,9 @@ export function LeaveBalancesPage() {
           )}
         </Group>
 
-        {error && <Text size="sm" c="red" mb="sm">{error}</Text>}
-
-        {!employeeId ? (
+        {error ? (
+          <ErrorCard message={error} onRetry={() => void load()} retrying={loading} />
+        ) : !employeeId ? (
           <Center py={48}>
             <Stack gap={6} align="center">
               <IconUserSearch size={30} stroke={1.5} color="var(--mantine-color-sand-4)" />

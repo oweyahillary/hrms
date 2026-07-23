@@ -11,9 +11,7 @@ import {
 } from '../api/salary';
 import { loadUserOptions, type UserOption } from '../api/users';
 import { ApiError } from '../api/client';
-
-const kes = (n: number): string =>
-  n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+import { kes } from '../utils/money';
 
 interface FormValues {
   basicSalary: number | string;
@@ -41,6 +39,7 @@ export function SalarySection({ employeeId, canEdit }: { employeeId: string; can
   const [users, setUsers] = useState<UserOption[]>([]);
 
   const form = useForm<FormValues>({
+    validateInputOnBlur: true,
     initialValues: { basicSalary: '', effectiveDate: new Date().toISOString().slice(0, 10), reason: '', approvedById: '' },
     validate: {
       basicSalary: (v) => (Number(v) > 0 ? null : 'Enter the new basic salary'),
@@ -149,9 +148,9 @@ export function SalarySection({ employeeId, canEdit }: { employeeId: string; can
         <>
           {effective ? (
             <SimpleGrid cols={{ base: 2, sm: 4 }} mb="lg">
-              <Stat label="Basic salary" value={`KES ${kes(effective.basicSalary)}`} />
-              <Stat label="Allowances" value={`KES ${kes(effective.derived.allowancesTotal)}`} />
-              <Stat label="Gross" value={`KES ${kes(effective.derived.gross)}`} />
+              <Stat label="Basic salary" value={kes(effective.basicSalary)} />
+              <Stat label="Allowances" value={kes(effective.derived.allowancesTotal)} />
+              <Stat label="Gross" value={kes(effective.derived.gross)} />
               <Stat label="Effective since" value={effective.effectiveDate} />
             </SimpleGrid>
           ) : (
@@ -205,7 +204,7 @@ export function SalarySection({ employeeId, canEdit }: { employeeId: string; can
               <Text size="sm" c={delta.amount > 0 ? 'teal' : delta.amount < 0 ? 'red' : 'sand.6'}>
                 {delta.amount === 0
                   ? 'No change from the current basic salary.'
-                  : `${delta.amount > 0 ? '+' : '-'}KES ${kes(Math.abs(delta.amount))} `
+                  : `${delta.amount > 0 ? '+' : '-'}${kes(Math.abs(delta.amount))} `
                     + `(${delta.amount > 0 ? '+' : '-'}${Math.abs(delta.pct).toFixed(1)}%) vs current basic`}
               </Text>
             )}

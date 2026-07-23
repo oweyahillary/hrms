@@ -13,6 +13,7 @@ export function ChangePasswordPage() {
   const [busy, setBusy] = useState(false);
 
   const form = useForm({
+    validateInputOnBlur: true,
     initialValues: { currentPassword: '', newPassword: '', confirm: '' },
     validate: {
       newPassword: (v) => (v.length >= 12 ? null : 'Use at least 12 characters'),

@@ -12,9 +12,7 @@ import {
   type SeveranceCalculation, type ContractTermType,
 } from '../api/severance';
 import { ApiError } from '../api/client';
-
-const kes = (n: number): string =>
-  n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+import { kes } from '../utils/money';
 
 const today = (): string => new Date().toISOString().slice(0, 10);
 
@@ -49,6 +47,7 @@ export function SeveranceSection({
   const [result, setResult] = useState<SeveranceCalculation | null>(null);
 
   const form = useForm<FormValues>({
+    validateInputOnBlur: true,
     initialValues: {
       exitDate: defaultExitDate ?? today(),
       reason: 'REDUNDANCY',
@@ -205,7 +204,7 @@ export function SeveranceSection({
           <Stack gap="md">
             <div>
               <Text size="xs" tt="uppercase" c="sand.6" fw={600} style={{ letterSpacing: '0.04em' }}>Severance entitlement</Text>
-              <Text fw={700} fz={30} lh={1.1}>KES {kes(result.severanceAmount)}</Text>
+              <Text fw={700} fz={30} lh={1.1}>{kes(result.severanceAmount)}</Text>
               {result.reason !== 'REDUNDANCY' && (
                 <Text size="xs" c="sand.6" mt={4}>
                   {result.reason} does not attract statutory severance — the entitlement is zero (notice pay still applies).
@@ -215,7 +214,7 @@ export function SeveranceSection({
 
             <SimpleGrid cols={2}>
               <Stat label="Completed years" value={b?.severance?.completedYears == null ? '\u2014' : String(b.severance.completedYears)} />
-              <Stat label="Notice pay in lieu" value={`KES ${kes(b?.notice?.payInLieu ?? 0)}`} />
+              <Stat label="Notice pay in lieu" value={kes(b?.notice?.payInLieu ?? 0)} />
             </SimpleGrid>
 
             {/* PAYE — deliberately in the same red "provisional" treatment used in the
@@ -223,7 +222,7 @@ export function SeveranceSection({
             <Alert color="red" variant="light" icon={<IconAlertTriangle size={16} />} title="PAYE — provisional, not verified">
               <Text size="sm">
                 {resultPayeStatus === 'PROVISIONAL_UNVERIFIED'
-                  ? `Provisional PAYE of KES ${kes(b?.paye?.paye ?? 0)}, spread as `
+                  ? `Provisional PAYE of ${kes(b?.paye?.paye ?? 0)}, spread as `
                     + `${b?.paye?.bucket ? (BUCKET_LABEL[b.paye.bucket] ?? b.paye.bucket) : '\u2014'} `
                     + `over ${b?.paye?.periods ?? '\u2014'} month(s).`
                   : resultPayeStatus === 'UNAVAILABLE'

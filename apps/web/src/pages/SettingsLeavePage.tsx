@@ -10,6 +10,7 @@ import {
 } from '../api/organization';
 import { getApprovers, type Approver } from '../api/leave';
 import { ApiError } from '../api/client';
+import { useUnsavedChangesWarning } from '../hooks/useUnsavedChangesWarning';
 
 interface FormValues {
   leaveApprovalMode: LeaveApprovalMode;
@@ -24,11 +25,13 @@ export function SettingsLeavePage() {
   const [approvers, setApprovers] = useState<Approver[]>([]);
 
   const form = useForm<FormValues>({
+    validateInputOnBlur: true,
     initialValues: {
       leaveApprovalMode: 'DEPT_HEAD_THEN_HR', leaveHrApproverUserId: '',
       allowEmployeeChosenApprovers: false,
     },
   });
+  useUnsavedChangesWarning(form.isDirty());
 
   useEffect(() => {
     let cancelled = false;

@@ -13,6 +13,7 @@ import {
 import { logoUrl } from '../api/branding';
 import { ApiError } from '../api/client';
 import { useBranding } from '../branding/BrandingContext';
+import { useUnsavedChangesWarning } from '../hooks/useUnsavedChangesWarning';
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
@@ -33,6 +34,7 @@ export function SettingsPage() {
     name: string; brandColor: string; logoAlignment: 'LEFT' | 'CENTER' | 'RIGHT';
     payslipNotice: string; kraPin: string; registrationNumber: string; physicalAddress: string;
   }>({
+    validateInputOnBlur: true,
     initialValues: {
       name: '', brandColor: '', logoAlignment: 'LEFT', payslipNotice: '',
       kraPin: '', registrationNumber: '', physicalAddress: '',
@@ -42,6 +44,7 @@ export function SettingsPage() {
       brandColor: (v) => (!v || HEX.test(v) ? null : 'Use a 6-digit hex colour, e.g. #0c6355'),
     },
   });
+  useUnsavedChangesWarning(form.isDirty());
 
   useEffect(() => {
     let cancelled = false;

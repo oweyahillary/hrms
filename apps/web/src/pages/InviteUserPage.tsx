@@ -27,6 +27,7 @@ export function InviteUserPage() {
   const [created, setCreated] = useState<CreatedUser | null>(null);
 
   const form = useForm<FormValues>({
+    validateInputOnBlur: true,
     initialValues: { email: '', roleId: '', employeeId: '' },
     validate: {
       email: (v) => (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? null : 'Enter a valid email'),

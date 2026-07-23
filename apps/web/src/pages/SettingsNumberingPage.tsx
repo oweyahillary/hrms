@@ -11,6 +11,7 @@ import {
   EMPLOYEE_NUMBER_PREFIX_REGEX, MAX_PADDING, MIN_PADDING, formatEmployeeNumber, prefixError,
 } from '../validation/employee-number';
 import { ApiError } from '../api/client';
+import { useUnsavedChangesWarning } from '../hooks/useUnsavedChangesWarning';
 
 interface FormValues {
   employeeNumberPrefix: string;
@@ -24,6 +25,7 @@ export function SettingsNumberingPage() {
   const [error, setError] = useState<string | null>(null);
 
   const form = useForm<FormValues>({
+    validateInputOnBlur: true,
     initialValues: { employeeNumberPrefix: '', employeeNumberPadding: 4, employeeNumberNextSeq: 1 },
     validate: {
       // Empty prefix is legitimate — it means auto-numbering is switched off.
@@ -40,6 +42,7 @@ export function SettingsNumberingPage() {
       },
     },
   });
+  useUnsavedChangesWarning(form.isDirty());
 
   useEffect(() => {
     let cancelled = false;

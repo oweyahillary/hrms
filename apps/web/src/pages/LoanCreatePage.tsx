@@ -29,6 +29,7 @@ export function LoanCreatePage() {
   const [capError, setCapError] = useState<string | null>(null);
 
   const form = useForm<FormValues>({
+    validateInputOnBlur: true,
     initialValues: {
       employeeId: '', type: 'LOAN', principal: '', interestRate: 0,
       numberOfInstallments: 3, disbursedDate: new Date().toISOString().slice(0, 10), reason: '',
