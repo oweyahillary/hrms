@@ -6,6 +6,7 @@ import { LeaveRequestsService } from '../leave/leave-requests.service';
 import { LeaveBalancesService } from '../leave/leave-balances.service';
 import { ShiftRosterService } from '../shifts/shift-roster.service';
 import { AttendanceService } from '../attendance/attendance.service';
+import { OvertimeService } from '../overtime/overtime.service';
 import type { AuthUser } from '../auth/decorators/current-user.decorator';
 
 interface EmployeeRow {
@@ -41,6 +42,7 @@ export class SelfServiceService {
     private readonly leaveBalances: LeaveBalancesService,
     private readonly shiftRoster: ShiftRosterService,
     private readonly attendance: AttendanceService,
+    private readonly overtime: OvertimeService,
   ) {}
 
   async getProfile(userId: string) {
@@ -168,6 +170,11 @@ export class SelfServiceService {
   async getAttendance(userId: string, from?: string, to?: string) {
     const employeeId = await this.resolveEmployeeId(userId);
     return this.attendance.list({ employeeId, from, to });
+  }
+
+  async getOvertime(userId: string, from?: string, to?: string) {
+    const employeeId = await this.resolveEmployeeId(userId);
+    return this.overtime.listForEmployee(employeeId, from, to);
   }
 
   /** Resolve the caller's own Employee id from their User row. Never trust a client-supplied id. */

@@ -49,4 +49,9 @@ export class SelfServiceController {
   attendance(@CurrentUser() user: AuthUser, @Query('from') from?: string, @Query('to') to?: string) {
     return this.selfService.getAttendance(user.userId, from, to);
   }
+
+  @Get('overtime')
+  overtime(@CurrentUser() user: AuthUser, @Query('from') from?: string, @Query('to') to?: string) {
+    return this.selfService.getOvertime(user.userId, from, to);
+  }
 }

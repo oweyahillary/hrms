@@ -15,6 +15,10 @@ import {
   type LoanApplication, type AdjustmentApplication,
 } from './payroll-extras';
 import { deriveStructureAmounts, pickEffectiveStructure, type ComponentInput } from '../salary/salary-math';
+import {
+  computeHourlyRate, computeOvertimeAmount, multiplierFor, pickEffectiveOvertimePolicy,
+  type OvertimeCategory, type OvertimeHourlyRateBasis,
+} from '../overtime/overtime-derivation';
 import type { CreatePayrollRunDto } from './dto/create-payroll-run.dto';
 import type { CreateCorrectionDto } from './dto/create-correction.dto';
 
@@ -24,6 +28,7 @@ interface EmployeeRow { id: string; employeeNumber: string }
 interface RunRow {
   id: string; periodMonth: number; periodYear: number; status: string; runType: string; correctsRunId: string | null; runDate: Date;
   payslips?: PayslipRow[]; loanRepayments?: LoanRepaymentRow[]; payrollAdjustments?: AdjustmentRow[];
+  overtimeEntries?: OvertimeEntryRow[];
 }
 interface PayslipRow {
   id: string; employeeId: string; grossPay: unknown; paye: unknown; nssfEmployee: unknown; nssfEmployer: unknown;
@@ -36,6 +41,15 @@ interface AdjustmentRow {
   status?: string; payrollRunId?: string | null; payslipId?: string | null;
 }
 interface LoanRepaymentRow { id: string; loanId: string; payslipId: string; amount: unknown; deferredAmount?: unknown; balanceAfter: unknown; }
+interface OvertimeEntryRow {
+  id: string; employeeId: string; date: Date; hours: unknown; category: string;
+  status: string; payrollRunId: string | null; amount: unknown;
+}
+interface OvertimePolicyRow {
+  effectiveFrom: Date; normalDayMultiplier: unknown; restDayMultiplier: unknown; holidayMultiplier: unknown;
+  hourlyRateBasis: string; normalWeeklyHours: number;
+}
+interface OvertimeApplication { id: string; amount: number; hours: number; category: string }
 type Skip = { employeeId: string; employeeNumber: string; reason: string };
 
 @Injectable()
@@ -102,11 +116,14 @@ export class PayrollRunsService {
       if (arr) arr.push(s); else byEmp.set(s.employeeId, [s]);
     }
 
-    // Loans/advances and one-off adjustments only apply to REGULAR runs — a
-    // correction targets a specific already-finalized figure and must not
-    // re-trigger a loan installment or re-consume a bonus/deduction.
+    // Loans/advances, one-off adjustments and overtime only apply to REGULAR
+    // runs — a correction targets a specific already-finalized figure and
+    // must not re-trigger a loan installment or re-consume a bonus/deduction/
+    // overtime entry.
     const loansByEmp = new Map<string, LoanRow[]>();
     const adjustmentsByEmp = new Map<string, AdjustmentRow[]>();
+    const overtimeByEmp = new Map<string, OvertimeEntryRow[]>();
+    let overtimePolicies: OvertimePolicyRow[] = [];
     if (opts.runType === 'REGULAR') {
       const loans = (await this.prisma.loan.findMany({
         where: { employeeId: { in: ids }, status: 'ACTIVE' } as never,
@@ -126,11 +143,31 @@ export class PayrollRunsService {
         const arr = adjustmentsByEmp.get(a.employeeId);
         if (arr) arr.push(a); else adjustmentsByEmp.set(a.employeeId, [a]);
       }
+
+      // APPROVED, not-yet-consumed (payrollRunId null) entries whose date
+      // falls within this period — see docs/overtime.md / OvertimeEntry's
+      // schema comment for why consumption is stamped here (draft-build
+      // time), not at finalize.
+      const periodStart = new Date(Date.UTC(opts.periodYear, opts.periodMonth - 1, 1));
+      const overtimeEntries = (await this.prisma.overtimeEntry.findMany({
+        where: {
+          employeeId: { in: ids }, status: 'APPROVED', payrollRunId: null,
+          date: { gte: periodStart, lte: asOf },
+        } as never,
+      })) as unknown as OvertimeEntryRow[];
+      for (const o of overtimeEntries) {
+        const arr = overtimeByEmp.get(o.employeeId);
+        if (arr) arr.push(o); else overtimeByEmp.set(o.employeeId, [o]);
+      }
+      if (overtimeEntries.length) {
+        overtimePolicies = (await this.prisma.overtimePolicy.findMany({})) as unknown as OvertimePolicyRow[];
+      }
     }
 
     const computed: Array<{
       employeeId: string; slip: ReturnType<typeof assemblePayslip>;
       loanApplications: LoanApplication[]; adjustmentApplications: AdjustmentApplication[];
+      overtimeApplications: OvertimeApplication[];
     }> = [];
     const skipped: Skip[] = [];
     for (const emp of employees) {
@@ -152,12 +189,38 @@ export class PayrollRunsService {
         id: a.id, type: a.type as 'BONUS' | 'DEDUCTION', amount: Number(a.amount), isTaxable: a.isTaxable,
       }));
 
+      // Overtime raises gross exactly like a bonus does — cash earnings, so
+      // it counts toward PAYE gross, SHIF/AHL base (both derived from gross)
+      // and NSSF pensionable pay. Mirrors the bonus treatment below; this
+      // codebase draws no statutory distinction between "bonus" and
+      // "overtime" cash earnings, and nothing here suggested one should
+      // exist, so overtime is folded in the same way. Rate/multiplier are
+      // resolved per-entry against the policy effective on that entry's OWN
+      // date, not the run's asOf — a policy change mid-period must not
+      // retroactively reprice entries dated before it took effect.
+      const overtimeApplications: OvertimeApplication[] = (overtimeByEmp.get(emp.id) ?? []).map((o) => {
+        const policyRow = pickEffectiveOvertimePolicy(overtimePolicies, o.date);
+        const hourlyRate = computeHourlyRate(basicSalary, {
+          hourlyRateBasis: (policyRow?.hourlyRateBasis ?? 'MONTHLY_X12_DIV_52_WEEKLY_HOURS') as OvertimeHourlyRateBasis,
+          normalWeeklyHours: policyRow?.normalWeeklyHours ?? 45,
+        });
+        const multiplier = multiplierFor(o.category as OvertimeCategory, {
+          normalDayMultiplier: Number(policyRow?.normalDayMultiplier ?? 1.5),
+          restDayMultiplier: Number(policyRow?.restDayMultiplier ?? 2),
+          holidayMultiplier: Number(policyRow?.holidayMultiplier ?? 2),
+          minimumMinutesToCount: 0, maxHoursPerDay: null, // not used by multiplierFor
+        });
+        const hours = Number(o.hours);
+        return { id: o.id, hours, category: o.category, amount: computeOvertimeAmount(hours, hourlyRate, multiplier) };
+      });
+      const overtimeGross = round2(overtimeApplications.reduce((s, a) => s + a.amount, 0));
+
       // Bonuses raise gross, so they must be known before statutory (and thus the
       // one-third floor budget) can be computed. Deductions are throttled after.
       const bonus = computeBonusAdditions(adjustmentInputs);
-      const gross = round2(d.gross + bonus.bonusGross);
-      const taxableGross = round2(d.taxableGross + bonus.bonusTaxableGross);
-      const pensionable = round2(d.pensionable + bonus.bonusGross);
+      const gross = round2(d.gross + bonus.bonusGross + overtimeGross);
+      const taxableGross = round2(d.taxableGross + bonus.bonusTaxableGross + overtimeGross);
+      const pensionable = round2(d.pensionable + bonus.bonusGross + overtimeGross);
 
       // Net after statutory only (PAYE/NSSF/SHIF/AHL) — the ceiling for voluntary
       // deductions. The salary-structure voluntary deductions (d.otherDeductions)
@@ -184,6 +247,7 @@ export class PayrollRunsService {
       computed.push({
         employeeId: emp.id, slip,
         loanApplications: extras.loanApplications, adjustmentApplications: extras.adjustmentApplications,
+        overtimeApplications,
       });
     }
     if (!computed.length) {
@@ -216,7 +280,7 @@ export class PayrollRunsService {
       });
 
       let idx = 0;
-      for (const { employeeId, slip, loanApplications, adjustmentApplications } of computed) {
+      for (const { employeeId, slip, loanApplications, adjustmentApplications, overtimeApplications } of computed) {
         const ps = (await tx.payslip.create({
           data: {
             payrollRunId: createdRun.id, employeeId,
@@ -280,6 +344,16 @@ export class PayrollRunsService {
           });
         }
 
+        // Overtime entries consumed by this payslip: stamp payrollRunId so
+        // they're never picked up by derive() or another run again. No
+        // status change (they stay APPROVED — payrollRunId alone is what
+        // "consumed" means here) and no separate audit entry, matching the
+        // adjustments precedent just above (only the NEW LoanRepayment row
+        // gets one; an UPDATE to an existing row doesn't).
+        for (const app of overtimeApplications) {
+          await tx.overtimeEntry.update({ where: { id: app.id }, data: { payrollRunId: createdRun.id, amount: app.amount } as never });
+        }
+
         // Test-only fault injection to prove transactional rollback. Never active
         // in production; requires NODE_ENV!=production and an explicit env flag.
         if (
@@ -311,7 +385,7 @@ export class PayrollRunsService {
   async findOne(id: string, skipped?: Skip[]) {
     const run = (await this.prisma.payrollRun.findFirst({
       where: { id } as never,
-      include: { payslips: true, loanRepayments: true, payrollAdjustments: true },
+      include: { payslips: true, loanRepayments: true, payrollAdjustments: true, overtimeEntries: true },
     })) as unknown as RunRow | null;
     if (!run) throw new NotFoundException('Payroll run not found');
 
@@ -334,9 +408,17 @@ export class PayrollRunsService {
       const arr = adjustmentsByPayslip.get(a.payslipId);
       if (arr) arr.push(a); else adjustmentsByPayslip.set(a.payslipId, [a]);
     }
+    // OvertimeEntry has no payslipId FK (only employeeId + payrollRunId — see
+    // the schema comment), so consumed entries for this run are matched to a
+    // payslip by employeeId; a run has at most one payslip per employee.
+    const overtimeByEmployee = new Map<string, OvertimeEntryRow[]>();
+    for (const o of run.overtimeEntries ?? []) {
+      const arr = overtimeByEmployee.get(o.employeeId);
+      if (arr) arr.push(o); else overtimeByEmployee.set(o.employeeId, [o]);
+    }
 
     const payslips = (run.payslips ?? []).map((p) =>
-      this.present(p, repaymentsByPayslip.get(p.id), adjustmentsByPayslip.get(p.id)),
+      this.present(p, repaymentsByPayslip.get(p.id), adjustmentsByPayslip.get(p.id), overtimeByEmployee.get(p.employeeId)),
     );
     const totals = payslips.reduce(
       (t, p) => ({
@@ -397,9 +479,19 @@ export class PayrollRunsService {
       throw new ConflictException('Only draft runs can be discarded. Finalized runs are immutable — create a correction run instead.');
     }
 
-    // Discarding a draft must undo the loan/adjustment side effects buildRun()
-    // applied — otherwise a loan installment or bonus that never actually got
-    // paid out would be silently and permanently consumed.
+    // Discarding a draft must undo the loan/adjustment/overtime side effects
+    // buildRun() applied — otherwise a loan installment, bonus or overtime
+    // entry that never actually got paid out would be silently and
+    // permanently consumed.
+    await this.prisma.overtimeEntry.updateMany({
+      where: { payrollRunId: id } as never,
+      // status stays APPROVED — discarding the run doesn't un-approve the
+      // overtime, it just becomes available to a later run again. amount is
+      // cleared: it was a snapshot of THIS run's rate/policy resolution, not
+      // a fact about the entry itself.
+      data: { payrollRunId: null, amount: null } as never,
+    });
+
     const repayments = (await this.prisma.loanRepayment.findMany({
       where: { payrollRunId: id } as never,
     })) as unknown as LoanRepaymentRow[];
@@ -424,7 +516,7 @@ export class PayrollRunsService {
     return { success: true };
   }
 
-  private present(p: PayslipRow, repayments?: LoanRepaymentRow[], adjustments?: AdjustmentRow[]) {
+  private present(p: PayslipRow, repayments?: LoanRepaymentRow[], adjustments?: AdjustmentRow[], overtime?: OvertimeEntryRow[]) {
     const grossPay = Number(p.grossPay), netPay = Number(p.netPay);
     return {
       id: p.id, employeeId: p.employeeId, grossPay, paye: Number(p.paye),
@@ -442,6 +534,12 @@ export class PayrollRunsService {
         return { loanId: r.loanId, amount, deferredAmount, scheduledAmount: round2(amount + deferredAmount) };
       }),
       adjustments: (adjustments ?? []).map((a) => ({ id: a.id, type: a.type, amount: Number(a.amount), reason: a.reason ?? null })),
+      // amount is always set here — every row present is one this run itself
+      // consumed (see findOne's overtimeByEmployee), so it was frozen at
+      // buildRun() time.
+      overtime: (overtime ?? []).map((o) => ({
+        id: o.id, date: o.date, hours: Number(o.hours), category: o.category, amount: Number(o.amount ?? 0),
+      })),
     };
   }
 }
