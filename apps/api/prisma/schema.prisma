@@ -267,6 +267,8 @@ model Organization {
   employees             Employee[]
   employeeDocuments     EmployeeDocument[]
   attendanceRecords     AttendanceRecord[]
+  attendanceDevices     AttendanceDevice[]
+  attendancePunches     AttendancePunch[]
   auditLogs             AuditLog[]
   publicHolidays        PublicHoliday[]
   leaveTypes            LeaveType[]
@@ -485,6 +487,7 @@ model Employee {
   user                  User?
   documents             EmployeeDocument[]
   attendanceRecords     AttendanceRecord[]
+  attendancePunches     AttendancePunch[]
   leaveBalances         LeaveBalance[]
   leaveRequests         LeaveRequest[]
   shiftAssignments      ShiftAssignment[]
@@ -563,6 +566,56 @@ model AttendanceRecord {
   @@index([organizationId])
   @@index([employeeId, date])
   @@map("attendance_records")
+}
+
+/// Registry of biometric devices pushing over the ADMS/iClock protocol — the
+/// SOLE security gate for the unauthenticated /iclock ingestion endpoint
+/// (see src/attendance-devices): an unknown or inactive serialNumber is
+/// rejected before anything is stored. serialNumber is globally unique
+/// (not per-org) because a device identifies itself by SN alone, with no
+/// org context, before we can look up which org it belongs to.
+model AttendanceDevice {
+  id             String    @id @default(uuid())
+  organizationId String
+  serialNumber   String    @unique
+  name           String
+  active         Boolean   @default(true)
+  lastSeenAt     DateTime?
+  registeredAt   DateTime  @default(now())
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  punches      AttendancePunch[]
+
+  @@index([organizationId])
+  @@map("attendance_devices")
+}
+
+/// Append-only raw punch log — the audit substrate AttendanceRecord
+/// materialization derives from (see AttendanceService.materializeFromPunches).
+/// Unique on (deviceId, devicePin, punchedAt) IS the dedupe: a duplicate
+/// device push resolves to a no-op, never a duplicate row. devicePin is the
+/// PIN as sent by the device (the Employee.employeeNumber convention) —
+/// kept as a plain string rather than only a resolved employeeId, because a
+/// punch whose pin matches no employee must still be stored and surfaced,
+/// never silently dropped.
+model AttendancePunch {
+  id             String   @id @default(uuid())
+  organizationId String
+  deviceId       String
+  devicePin      String
+  employeeId     String?
+  punchedAt      DateTime
+  receivedAt     DateTime @default(now())
+  raw            String?  @db.VarChar(500)
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  device       AttendanceDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  employee     Employee?        @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  @@unique([deviceId, devicePin, punchedAt])
+  @@index([organizationId, punchedAt])
+  @@index([devicePin])
+  @@map("attendance_punches")
 }
 
 enum ShiftAssignmentSource {

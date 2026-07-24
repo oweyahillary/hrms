@@ -16,6 +16,7 @@ export const TENANT_SCOPED_MODELS: ReadonlySet<string> = new Set([
   'User', 'Role', 'AuditLog', 'Department', 'JobTitle', 'Employee',
   'EmployeeDocument', 'PublicHoliday', 'AttendanceRecord', 'LeaveType',
   'LeaveBalance', 'LeaveRequest', 'ShiftDefinition', 'ShiftAssignment',
+  'AttendanceDevice', 'AttendancePunch',
   'SalaryStructure', 'PayrollRun',
   'ConsentRecord', 'DataSubjectRequest', 'RetentionPolicy', 'BreachIncident',
   'SeveranceCalculation', 'Loan', 'PayrollAdjustment',

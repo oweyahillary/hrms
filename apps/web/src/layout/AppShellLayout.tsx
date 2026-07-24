@@ -126,6 +126,7 @@ const ADMIN_NAV: NavItem[] = [
       { to: '/settings/numbering', label: 'Employee numbers' },
       { to: '/settings/payroll', label: 'Payroll' },
       { to: '/settings/shifts', label: 'Shift definitions' },
+      { to: '/settings/devices', label: 'Devices' },
       { to: '/settings/users', label: 'Users' },
     ],
   },

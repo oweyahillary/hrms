@@ -178,13 +178,38 @@ export class AttendanceService {
   }
 
   /**
+   * Writes/updates an AttendanceRecord from device-derived punches (see
+   * src/attendance-devices), deriving status the same way upsert()/
+   * importCsv() do. Never overwrites a MANUAL-sourced record — there's no
+   * separate "was this status explicit" flag on the row, so `source` IS
+   * that signal: MANUAL means HR touched this day directly and it's never
+   * clobbered by (re-)materialization; BIOMETRIC is always safe to rewrite,
+   * which is also what makes re-materialization idempotent.
+   */
+  async materializeFromPunches(employeeId: string, dateStr: string, clockIn: Date, clockOut: Date | null): Promise<void> {
+    const date = new Date(`${dateStr}T00:00:00.000Z`);
+    const existing = (await this.prisma.attendanceRecord.findFirst({
+      where: { employeeId, date },
+    })) as unknown as AttendanceRow | null;
+    if (existing?.source === 'MANUAL') return;
+
+    const grace = await this.lateGraceMinutes();
+    const general = await this.generalShift();
+    const { shift } = await this.resolveShiftFor(employeeId, date, general);
+    const status = shift ? deriveStatus(clockIn, clockOut, shift, grace) : 'PRESENT';
+    await this.writeRecord(employeeId, date, clockIn, clockOut, status, 'BIOMETRIC');
+  }
+
+  /**
    * A synchronous dateFor for pairPunches (see punch-pairing.ts) that
    * attributes an early-morning punch to the PREVIOUS day when — and only
    * when — that employee actually has a crossesMidnight shift assignment
    * starting that previous day. Pre-fetches every relevant ShiftAssignment
    * in one query so pairPunches itself stays a pure, DB-free function.
+   * Public: src/attendance-devices reuses this verbatim for materializing
+   * device-pushed punches, same as the CSV/ZK import path.
    */
-  private async buildNightShiftAwareDateFor(
+  async buildNightShiftAwareDateFor(
     punches: Punch[],
   ): Promise<(employeeNumber: string, timestamp: Date) => string> {
     if (punches.length === 0) return (_e, ts) => ts.toISOString().slice(0, 10);

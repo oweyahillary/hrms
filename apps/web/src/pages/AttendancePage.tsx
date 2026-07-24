@@ -5,7 +5,7 @@ import {
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
-  IconAlertTriangle, IconCheck, IconClockHour4, IconDownload, IconUpload, IconUsers,
+  IconAlertTriangle, IconCheck, IconClockHour4, IconDeviceDesktop, IconDownload, IconUpload, IconUsers,
 } from '@tabler/icons-react';
 import {
   listAttendance, upsertAttendance, importAttendance, ATTENDANCE_STATUSES,
@@ -241,8 +241,13 @@ export function AttendancePage() {
                         <Table.Td>{timeOf(r?.clockIn ?? null) || '—'}</Table.Td>
                         <Table.Td>{timeOf(r?.clockOut ?? null) || '—'}</Table.Td>
                         <Table.Td>
-                          {r ? <Badge variant="light" size="sm" color={STATUS_COLOR[r.status]}>{STATUS_LABEL[r.status]}</Badge>
-                            : <Badge variant="light" size="sm" color="sand">Not marked</Badge>}
+                          <Group gap={4} wrap="nowrap">
+                            {r ? <Badge variant="light" size="sm" color={STATUS_COLOR[r.status]}>{STATUS_LABEL[r.status]}</Badge>
+                              : <Badge variant="light" size="sm" color="sand">Not marked</Badge>}
+                            {r?.source === 'BIOMETRIC' && (
+                              <IconDeviceDesktop size={14} color="var(--mantine-color-sand-5)" title="From a biometric device or import" />
+                            )}
+                          </Group>
                         </Table.Td>
                         <Table.Td>
                           {r && r.lateMinutes > 0 ? <Text size="sm" c="amber.7">{r.lateMinutes}m</Text> : <Text size="sm" c="sand.5">—</Text>}
@@ -271,8 +276,13 @@ export function AttendancePage() {
                       <Text fw={600} size="sm">{e.fullName}</Text>
                       <Text size="xs" c="sand.6">{e.employeeNumber}</Text>
                     </div>
-                    {r ? <Badge variant="light" size="sm" color={STATUS_COLOR[r.status]}>{STATUS_LABEL[r.status]}</Badge>
-                      : <Badge variant="light" size="sm" color="sand">Not marked</Badge>}
+                    <Group gap={4} wrap="nowrap">
+                      {r ? <Badge variant="light" size="sm" color={STATUS_COLOR[r.status]}>{STATUS_LABEL[r.status]}</Badge>
+                        : <Badge variant="light" size="sm" color="sand">Not marked</Badge>}
+                      {r?.source === 'BIOMETRIC' && (
+                        <IconDeviceDesktop size={14} color="var(--mantine-color-sand-5)" title="From a biometric device or import" />
+                      )}
+                    </Group>
                   </Group>
                   <Group gap={6}>
                     {r?.shiftCode && <Badge variant="light" size="sm" color={shiftColor(r.shiftCode)}>{r.shiftCode}</Badge>}
