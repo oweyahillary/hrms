@@ -25,11 +25,11 @@ interface PayslipRow {
 }
 
 /**
- * "My own data" endpoints for any authenticated employee — deliberately NOT
- * gated by HR_MANAGEMENT_ROLES. Every method resolves the caller's Employee
+ * "My own data" endpoints for any authenticated employee — deliberately not
+ * gated by any @Permissions. Every method resolves the caller's Employee
  * row from their OWN userId (never a client-supplied employeeId), so a
  * privileged caller hitting these routes sees only their own data too — the
- * self-scoping comes from how the id is resolved, not from a role check.
+ * self-scoping comes from how the id is resolved, not from a permission check.
  */
 @Injectable()
 export class SelfServiceService {

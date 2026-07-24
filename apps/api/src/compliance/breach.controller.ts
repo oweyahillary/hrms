@@ -4,8 +4,7 @@ import { BreachService } from './breach.service';
 import { CreateBreachDto } from './dto/create-breach.dto';
 import { UpdateBreachDto } from './dto/update-breach.dto';
 import { ListBreachDto } from './dto/list-breach.dto';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
+import { Permissions } from '../auth/decorators/permissions.decorator';
 
 @ApiTags('compliance-breach')
 @ApiBearerAuth()
@@ -13,21 +12,21 @@ import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
 export class BreachController {
   constructor(private readonly breach: BreachService) {}
 
-  @Post() @Roles(...HR_MANAGEMENT_ROLES)
+  @Post() @Permissions('compliance.manage')
   create(@Body() dto: CreateBreachDto) { return this.breach.create(dto); }
 
-  @Get() @Roles(...HR_MANAGEMENT_ROLES)
+  @Get() @Permissions('compliance.manage')
   list(@Query() q: ListBreachDto) { return this.breach.list(q.status); }
 
-  @Get(':id') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get(':id') @Permissions('compliance.manage')
   get(@Param('id') id: string) { return this.breach.get(id); }
 
-  @Patch(':id') @Roles(...HR_MANAGEMENT_ROLES)
+  @Patch(':id') @Permissions('compliance.manage')
   update(@Param('id') id: string, @Body() dto: UpdateBreachDto) { return this.breach.update(id, dto); }
 
-  @Post(':id/notify-odpc') @Roles(...HR_MANAGEMENT_ROLES)
+  @Post(':id/notify-odpc') @Permissions('compliance.manage')
   notifyOdpc(@Param('id') id: string) { return this.breach.notifyOdpc(id); }
 
-  @Post(':id/notify-employees') @Roles(...HR_MANAGEMENT_ROLES)
+  @Post(':id/notify-employees') @Permissions('compliance.manage')
   notifyEmployees(@Param('id') id: string) { return this.breach.notifyEmployees(id); }
 }

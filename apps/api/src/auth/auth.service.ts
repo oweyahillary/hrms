@@ -5,6 +5,7 @@ import { CryptoService } from '../crypto/crypto.service';
 import { PasswordService } from './password.service';
 import { TokensService } from './tokens.service';
 import { newTotpSecret, totpUri, totpValid, newBackupCodes, hashBackupCode } from './totp.util';
+import { resolveRolePermissions } from './permissions';
 
 interface SessionMeta {
   ipAddress?: string;
@@ -31,6 +32,7 @@ export class AuthService {
       id: user.id,
       email: user.email,
       role: user.role.name,
+      permissions: resolveRolePermissions(user.role.permissions),
       organizationId: user.organizationId,
       organizationName: user.organization?.name ?? '',
       mustChangePassword: user.mustChangePassword === true,
@@ -286,7 +288,10 @@ export class AuthService {
   }
 
   private async issueSession(
-    user: { id: string; email: string; organizationId: string; mustChangePassword?: boolean; role: { name: string } },
+    user: {
+      id: string; email: string; organizationId: string; mustChangePassword?: boolean;
+      role: { name: string; permissions: unknown };
+    },
     meta: SessionMeta,
   ) {
     const { token: refreshToken, hash } = this.tokens.newRefreshToken();
@@ -301,17 +306,22 @@ export class AuthService {
     });
     await this.prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
 
+    const permissions = resolveRolePermissions(user.role.permissions);
     const accessToken = await this.tokens.signAccessToken({
       sub: user.id,
       org: user.organizationId,
       role: user.role.name,
+      perms: permissions,
       mcp: user.mustChangePassword === true ? true : undefined,
     });
     return {
       accessToken,
       refreshToken,
       mustChangePassword: user.mustChangePassword === true,
-      user: { id: user.id, email: user.email, role: user.role.name, organizationId: user.organizationId },
+      user: {
+        id: user.id, email: user.email, role: user.role.name, permissions,
+        organizationId: user.organizationId,
+      },
     };
   }
 }

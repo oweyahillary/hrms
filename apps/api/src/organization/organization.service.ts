@@ -8,7 +8,7 @@ import type { UpdateLeaveApprovalDto } from './dto/update-leave-approval.dto';
 import type { UpdatePayrollSettingsDto } from './dto/update-payroll-settings.dto';
 import type { UpdateAttendanceSettingsDto } from './dto/update-attendance-settings.dto';
 import { formatEmployeeNumber } from '../employees/employee-number';
-import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
+import { resolveRolePermissions } from '../auth/permissions';
 
 export interface UploadedFileLike {
   originalname: string;
@@ -112,12 +112,12 @@ export class OrganizationService {
     if (dto.leaveHrApproverUserId) {
       const u = (await this.prisma.user.findFirst({
         where: { id: dto.leaveHrApproverUserId },
-        include: { role: { select: { name: true } } },
-      } as never)) as unknown as { isActive: boolean; role?: { name: string } } | null;
+        include: { role: { select: { permissions: true } } },
+      } as never)) as unknown as { isActive: boolean; role?: { permissions: unknown } } | null;
       if (!u) throw new BadRequestException('leaveHrApproverUserId does not exist');
       if (!u.isActive) throw new BadRequestException('That user is deactivated and cannot approve leave');
-      if (!HR_MANAGEMENT_ROLES.includes(u.role?.name ?? '')) {
-        throw new BadRequestException('The leave approver must hold an HR or Admin role');
+      if (!resolveRolePermissions(u.role?.permissions).includes('leave.manage')) {
+        throw new BadRequestException('The leave approver must hold a role with leave-management permission');
       }
     }
 

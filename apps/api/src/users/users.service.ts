@@ -3,8 +3,15 @@ import {
 } from '@nestjs/common';
 import { PRISMA, type ExtendedPrismaClient } from '../prisma/prisma.service';
 import { PasswordService } from '../auth/password.service';
+import { resolveRolePermissions, ROLE_PERMISSION_DEFAULTS } from '../auth/permissions';
 import type { CreateUserDto } from './dto/create-user.dto';
 import type { UpdateUserDto } from './dto/update-user.dto';
+import type { CreateRoleDto } from './dto/create-role.dto';
+import type { UpdateRoleDto } from './dto/update-role.dto';
+
+interface RoleRow { id: string; name: string; permissions: unknown }
+/** The historically-known role names — see auth/permissions.ts. Not deletable (may still be renamed/re-permissioned). */
+const SEEDED_ROLE_NAMES = new Set(Object.keys(ROLE_PERMISSION_DEFAULTS));
 
 interface UserRow {
   id: string;
@@ -42,12 +49,91 @@ export class UsersService {
     return rows.map((u) => this.present(u));
   }
 
-  /** Read-only role list for the role-picker (Role already exists in schema). */
+  /** Roles for the role-picker AND the Settings > Roles admin page. */
   async listRoles() {
     const roles = (await this.prisma.role.findMany({
       orderBy: { name: 'asc' },
-    } as never)) as unknown as Array<{ id: string; name: string }>;
-    return roles.map((r) => ({ id: r.id, name: r.name }));
+      include: { _count: { select: { users: true } } },
+    } as never)) as unknown as Array<RoleRow & { _count: { users: number } }>;
+    return roles.map((r) => this.presentRole(r, r._count.users));
+  }
+
+  async getRole(id: string) {
+    const role = (await this.prisma.role.findFirst({
+      where: { id } as never, include: { _count: { select: { users: true } } },
+    } as never)) as unknown as (RoleRow & { _count: { users: number } }) | null;
+    if (!role) throw new NotFoundException('Role not found');
+    return this.presentRole(role, role._count.users);
+  }
+
+  async createRole(dto: CreateRoleDto) {
+    try {
+      const role = (await this.prisma.role.create({
+        data: { name: dto.name, permissions: dto.permissions } as never,
+      })) as unknown as RoleRow;
+      return this.presentRole(role, 0);
+    } catch (err) {
+      if ((err as { code?: string }).code === 'P2002') {
+        throw new ConflictException('A role with this name already exists in this organisation.');
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Seeded roles (the historically-known names — see ROLE_PERMISSION_DEFAULTS)
+   * may have their permissions re-assigned like any other role. The one thing
+   * they can't do is rename AWAY from 'Admin': createLogin's "only an Admin
+   * can grant the Admin role" check resolves the Admin role BY NAME, so
+   * renaming it would silently break that bootstrap safeguard.
+   */
+  async updateRole(id: string, dto: UpdateRoleDto) {
+    const role = (await this.prisma.role.findFirst({ where: { id } as never })) as unknown as RoleRow | null;
+    if (!role) throw new NotFoundException('Role not found');
+    if (role.name === 'Admin' && dto.name !== undefined && dto.name !== 'Admin') {
+      throw new ConflictException("The Admin role can't be renamed — other checks resolve it by that exact name.");
+    }
+
+    const data: Record<string, unknown> = {};
+    if (dto.name !== undefined) data.name = dto.name;
+    if (dto.permissions !== undefined) data.permissions = dto.permissions;
+
+    try {
+      const updated = (await this.prisma.role.update({
+        where: { id }, data: data as never,
+      })) as unknown as RoleRow;
+      const userCount = await this.prisma.user.count({ where: { roleId: id } as never });
+      return this.presentRole(updated, userCount);
+    } catch (err) {
+      if ((err as { code?: string }).code === 'P2002') {
+        throw new ConflictException('A role with this name already exists in this organisation.');
+      }
+      throw err;
+    }
+  }
+
+  async removeRole(id: string) {
+    const role = (await this.prisma.role.findFirst({ where: { id } as never })) as unknown as RoleRow | null;
+    if (!role) throw new NotFoundException('Role not found');
+    if (SEEDED_ROLE_NAMES.has(role.name)) {
+      throw new ConflictException(`"${role.name}" is a built-in role and can't be deleted — its permissions can still be edited.`);
+    }
+    const userCount = await this.prisma.user.count({ where: { roleId: id } as never });
+    if (userCount > 0) {
+      throw new ConflictException(`${userCount} user(s) still hold this role — reassign them first.`);
+    }
+    await this.prisma.role.delete({ where: { id } });
+    return { success: true };
+  }
+
+  private presentRole(r: RoleRow, userCount: number) {
+    return {
+      id: r.id,
+      name: r.name,
+      permissions: resolveRolePermissions(r.permissions),
+      isSeeded: SEEDED_ROLE_NAMES.has(r.name),
+      userCount,
+    };
   }
 
   async create(dto: CreateUserDto) {

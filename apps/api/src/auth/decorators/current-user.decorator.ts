@@ -4,6 +4,8 @@ export interface AuthUser {
   userId: string;
   organizationId: string;
   role: string;
+  /** Resolved from the caller's role at login/refresh time — see auth.service.ts issueSession. */
+  permissions: string[];
   mustChangePassword: boolean;
 }
 

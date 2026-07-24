@@ -1,15 +1,18 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { CreateRoleDto } from './dto/create-role.dto';
+import { UpdateRoleDto } from './dto/update-role.dto';
+import { Permissions } from '../auth/decorators/permissions.decorator';
 import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.decorator';
+import { PERMISSIONS } from '../auth/permissions';
 
 @ApiTags('users')
 @ApiBearerAuth()
 @Controller('users')
-@Roles('Admin')
+@Permissions('users.manage')
 export class UsersController {
   constructor(private readonly users: UsersService) {}
 
@@ -35,12 +38,38 @@ export class UsersController {
 @ApiTags('users')
 @ApiBearerAuth()
 @Controller('roles')
-@Roles('Admin')
+@Permissions('users.manage')
 export class RolesController {
   constructor(private readonly users: UsersService) {}
+
+  /** The full permission catalogue, for the Settings > Roles checkbox editor. Declared before ':id' for the same reason as elsewhere. */
+  @Get('catalogue')
+  catalogue() {
+    return PERMISSIONS;
+  }
 
   @Get()
   list() {
     return this.users.listRoles();
+  }
+
+  @Get(':id')
+  get(@Param('id') id: string) {
+    return this.users.getRole(id);
+  }
+
+  @Post()
+  create(@Body() dto: CreateRoleDto) {
+    return this.users.createRole(dto);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateRoleDto) {
+    return this.users.updateRole(id, dto);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.users.removeRole(id);
   }
 }

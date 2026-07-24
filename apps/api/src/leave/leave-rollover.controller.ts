@@ -2,10 +2,7 @@ import { Body, Controller, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { LeaveRolloverService } from './leave-rollover.service';
 import { RunRolloverDto } from './dto/run-rollover.dto';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
-
-const MANAGE = [...HR_MANAGEMENT_ROLES] as string[];
+import { Permissions } from '../auth/decorators/permissions.decorator';
 
 @ApiTags('leave-rollover')
 @ApiBearerAuth()
@@ -17,7 +14,7 @@ export class LeaveRolloverController {
    * Idempotently carry unused leave from a closed year into the next one.
    * Defaults to last year, which is what you want running it in January.
    */
-  @Post('run') @Roles(...MANAGE)
+  @Post('run') @Permissions('leave.manage')
   run(@Body() dto: RunRolloverDto) {
     const fromYear = dto.fromYear ?? new Date().getUTCFullYear() - 1;
     return this.rollover.runRollover(fromYear);

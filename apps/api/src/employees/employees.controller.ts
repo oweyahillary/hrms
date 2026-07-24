@@ -9,11 +9,8 @@ import { TerminateEmployeeDto } from './dto/terminate-employee.dto';
 import { ListEmployeesDto } from './dto/list-employees.dto';
 import { LookupEmployeeDto } from './dto/lookup-employee.dto';
 import { CreateLoginDto } from './dto/create-login.dto';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { Permissions } from '../auth/decorators/permissions.decorator';
 import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.decorator';
-import { PII_PRIVILEGED_ROLES } from './employee-pii';
-
-const MANAGE = [...PII_PRIVILEGED_ROLES] as string[];
 
 @ApiTags('employees')
 @ApiBearerAuth()
@@ -22,13 +19,14 @@ export class EmployeesController {
   constructor(private readonly employees: EmployeesService) {}
 
   @Post()
-  @Roles(...MANAGE)
+  @Permissions('employees.write')
   create(@Body() dto: CreateEmployeeDto, @CurrentUser() user: AuthUser) {
-    return this.employees.create(dto, user.role);
+    return this.employees.create(dto, user);
   }
 
   // The list payload carries no PII (see LIST_SELECT), so unlike the other
-  // reads it doesn't need the caller's role to decide masking.
+  // reads it doesn't need the caller's permissions to decide masking. Not
+  // gated on any permission today (pre-dates this migration; see PR notes).
   @Get()
   list(@Query() query: ListEmployeesDto) {
     return this.employees.list(query);
@@ -36,9 +34,9 @@ export class EmployeesController {
 
   // Declared BEFORE :id so '/employees/lookup' isn't captured as an id.
   @Get('lookup')
-  @Roles(...MANAGE)
+  @Permissions('pii.view')
   lookup(@Query() dto: LookupEmployeeDto, @CurrentUser() user: AuthUser) {
-    return this.employees.lookupByNationalId(dto.nationalId, user.role);
+    return this.employees.lookupByNationalId(dto.nationalId, user);
   }
 
   /**
@@ -53,32 +51,32 @@ export class EmployeesController {
 
   @Get(':id')
   get(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.employees.get(id, user.role);
+    return this.employees.get(id, user);
   }
 
   @Patch(':id')
-  @Roles(...MANAGE)
+  @Permissions('employees.write')
   update(@Param('id') id: string, @Body() dto: UpdateEmployeeDto, @CurrentUser() user: AuthUser) {
-    return this.employees.update(id, dto, user.role);
+    return this.employees.update(id, dto, user);
   }
 
   @Post(':id/terminate')
-  @Roles(...MANAGE)
+  @Permissions('employees.write')
   @HttpCode(200)
   terminate(@Param('id') id: string, @Body() dto: TerminateEmployeeDto, @CurrentUser() user: AuthUser) {
-    return this.employees.terminate(id, dto, user.role);
+    return this.employees.terminate(id, dto, user);
   }
 
   @Post(':id/anonymize')
-  @Roles('Admin')
+  @Permissions('employees.anonymize')
   anonymize(@Param('id') id: string) {
     return this.employees.anonymize(id);
   }
 
   // Granting 'Admin' is further restricted to Admin actors inside the service.
   @Post(':id/create-login')
-  @Roles(...MANAGE)
+  @Permissions('employees.write')
   createLogin(@Param('id') id: string, @Body() dto: CreateLoginDto, @CurrentUser() user: AuthUser) {
-    return this.employees.createLogin(id, dto, user.role);
+    return this.employees.createLogin(id, dto, user);
   }
 }

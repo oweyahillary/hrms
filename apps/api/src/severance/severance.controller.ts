@@ -2,8 +2,7 @@ import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { SeveranceService } from './severance.service';
 import { CreateSeveranceDto } from './dto/create-severance.dto';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
+import { Permissions } from '../auth/decorators/permissions.decorator';
 
 @ApiTags('severance')
 @ApiBearerAuth()
@@ -11,12 +10,12 @@ import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
 export class EmployeeSeveranceController {
   constructor(private readonly svc: SeveranceService) {}
 
-  @Post() @Roles(...HR_MANAGEMENT_ROLES)
+  @Post() @Permissions('payroll.manage')
   create(@Param('employeeId') employeeId: string, @Body() dto: CreateSeveranceDto) {
     return this.svc.create(employeeId, dto);
   }
 
-  @Get() @Roles(...HR_MANAGEMENT_ROLES)
+  @Get() @Permissions('payroll.manage')
   list(@Param('employeeId') employeeId: string) {
     return this.svc.list(employeeId);
   }
@@ -28,7 +27,7 @@ export class EmployeeSeveranceController {
 export class SeveranceController {
   constructor(private readonly svc: SeveranceService) {}
 
-  @Get(':id') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get(':id') @Permissions('payroll.manage')
   findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }

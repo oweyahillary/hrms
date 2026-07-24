@@ -3,10 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ShiftDefinitionsService } from './shift-definitions.service';
 import { CreateShiftDefinitionDto } from './dto/create-shift-definition.dto';
 import { UpdateShiftDefinitionDto } from './dto/update-shift-definition.dto';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
-
-const MANAGE = [...HR_MANAGEMENT_ROLES] as string[];
+import { Permissions } from '../auth/decorators/permissions.decorator';
 
 @ApiTags('shift-definitions')
 @ApiBearerAuth()
@@ -14,28 +11,28 @@ const MANAGE = [...HR_MANAGEMENT_ROLES] as string[];
 export class ShiftDefinitionsController {
   constructor(private readonly definitions: ShiftDefinitionsService) {}
 
-  @Post() @Roles(...MANAGE)
+  @Post() @Permissions('shifts.manage')
   create(@Body() dto: CreateShiftDefinitionDto) {
     return this.definitions.create(dto);
   }
 
-  @Get() @Roles(...MANAGE)
+  @Get() @Permissions('shifts.manage')
   list(@Query('includeInactive') includeInactive?: string) {
     return this.definitions.list(includeInactive === 'true');
   }
 
-  @Get(':id') @Roles(...MANAGE)
+  @Get(':id') @Permissions('shifts.manage')
   get(@Param('id') id: string) {
     return this.definitions.get(id);
   }
 
-  @Patch(':id') @Roles(...MANAGE)
+  @Patch(':id') @Permissions('shifts.manage')
   update(@Param('id') id: string, @Body() dto: UpdateShiftDefinitionDto) {
     return this.definitions.update(id, dto);
   }
 
   /** 409 if any roster assignment still references it — deactivate (PATCH active:false) instead. */
-  @Delete(':id') @Roles(...MANAGE)
+  @Delete(':id') @Permissions('shifts.manage')
   remove(@Param('id') id: string) {
     return this.definitions.remove(id);
   }

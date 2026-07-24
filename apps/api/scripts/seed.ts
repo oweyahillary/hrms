@@ -11,6 +11,7 @@
 import 'dotenv/config';
 import { createPrismaClient } from '../src/prisma/prisma.service';
 import { PasswordService } from '../src/auth/password.service';
+import { PERMISSION_KEYS } from '../src/auth/permissions';
 
 async function main() {
   const prisma = createPrismaClient();
@@ -30,7 +31,11 @@ async function main() {
 
   let role = await prisma.role.findFirst({ where: { organizationId: org.id, name: 'Admin' } });
   role ??= await prisma.role.create({
-    data: { organizationId: org.id, name: 'Admin', permissions: { all: true } },
+    // Every permission, explicitly — see auth/permissions.ts. Not `{ all: true }`:
+    // that legacy shape is still HONOURED by resolveRolePermissions() for rows
+    // written before this migration, but new rows get a real, editable array so
+    // the Settings > Roles page renders every checkbox checked, not a black box.
+    data: { organizationId: org.id, name: 'Admin', permissions: [...PERMISSION_KEYS] },
   });
 
   const existing = await prisma.user.findFirst({ where: { organizationId: org.id, email } });

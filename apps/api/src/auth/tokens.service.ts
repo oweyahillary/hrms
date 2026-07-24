@@ -5,10 +5,11 @@ import { createHash, randomBytes } from 'node:crypto';
 
 /** Claims embedded in the short-lived access JWT. */
 export interface AccessTokenPayload {
-  sub: string;   // userId
-  org: string;   // organizationId
-  role: string;  // role name
-  mcp?: boolean; // must-change-password: true blocks all routes except the change-password flow
+  sub: string;      // userId
+  org: string;      // organizationId
+  role: string;     // role name (display only — authorization uses `perms`)
+  perms: string[];  // resolved permission keys, see auth/permissions.ts
+  mcp?: boolean;    // must-change-password: true blocks all routes except the change-password flow
 }
 
 @Injectable()

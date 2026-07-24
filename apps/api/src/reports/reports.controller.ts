@@ -2,8 +2,7 @@ import { BadRequestException, Controller, Get, Query, Res, StreamableFile } from
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { ReportsService } from './reports.service';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
+import { Permissions } from '../auth/decorators/permissions.decorator';
 
 function parsePeriod(year?: string, month?: string): { year: number; month: number } {
   const y = Number(year);
@@ -23,19 +22,19 @@ function parsePeriod(year?: string, month?: string): { year: number; month: numb
 export class ReportsController {
   constructor(private readonly reports: ReportsService) {}
 
-  @Get('payroll-summary') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get('payroll-summary') @Permissions('payroll.manage')
   payrollSummary(@Query('year') year?: string, @Query('month') month?: string) {
     const { year: y, month: m } = parsePeriod(year, month);
     return this.reports.payrollSummary(y, m);
   }
 
-  @Get('statutory-remittance') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get('statutory-remittance') @Permissions('payroll.manage')
   statutoryRemittance(@Query('year') year?: string, @Query('month') month?: string) {
     const { year: y, month: m } = parsePeriod(year, month);
     return this.reports.statutoryRemittance(y, m);
   }
 
-  @Get('year-trend') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get('year-trend') @Permissions('payroll.manage')
   yearTrend(@Query('year') year?: string) {
     const y = Number(year);
     if (!Number.isInteger(y) || y < 2000 || y > 2100) {
@@ -44,12 +43,12 @@ export class ReportsController {
     return this.reports.yearTrend(y);
   }
 
-  @Get('headcount') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get('headcount') @Permissions('payroll.manage')
   headcount() {
     return this.reports.headcount();
   }
 
-  @Get('statutory-remittance/pdf') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get('statutory-remittance/pdf') @Permissions('payroll.manage')
   async remittancePdf(
     @Res({ passthrough: true }) res: Response,
     @Query('year') year?: string,
@@ -61,7 +60,7 @@ export class ReportsController {
     return new StreamableFile(buffer);
   }
 
-  @Get('payroll-summary/pdf') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get('payroll-summary/pdf') @Permissions('payroll.manage')
   async payrollSummaryPdf(
     @Res({ passthrough: true }) res: Response,
     @Query('year') year?: string,
@@ -73,12 +72,12 @@ export class ReportsController {
     return new StreamableFile(buffer);
   }
 
-  @Get('loan-book') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get('loan-book') @Permissions('payroll.manage')
   loanBook(@Query('employeeId') employeeId?: string, @Query('status') status?: string) {
     return this.reports.loanBook({ employeeId, status });
   }
 
-  @Get('loan-book/pdf') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get('loan-book/pdf') @Permissions('payroll.manage')
   async loanBookPdf(
     @Res({ passthrough: true }) res: Response,
     @Query('employeeId') employeeId?: string,
@@ -89,19 +88,19 @@ export class ReportsController {
     return new StreamableFile(buffer);
   }
 
-  @Get('severance-register') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get('severance-register') @Permissions('payroll.manage')
   severanceRegister() {
     return this.reports.severanceRegister();
   }
 
-  @Get('severance-register/pdf') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get('severance-register/pdf') @Permissions('payroll.manage')
   async severanceRegisterPdf(@Res({ passthrough: true }) res: Response): Promise<StreamableFile> {
     const { buffer, filename } = await this.reports.severanceRegisterPdf();
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${filename}"` });
     return new StreamableFile(buffer);
   }
 
-  @Get('adjustments-register') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get('adjustments-register') @Permissions('payroll.manage')
   adjustmentsRegister(
     @Query('employeeId') employeeId?: string,
     @Query('status') status?: string,
@@ -115,7 +114,7 @@ export class ReportsController {
     });
   }
 
-  @Get('adjustments-register/pdf') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get('adjustments-register/pdf') @Permissions('payroll.manage')
   async adjustmentsRegisterPdf(
     @Res({ passthrough: true }) res: Response,
     @Query('employeeId') employeeId?: string,
