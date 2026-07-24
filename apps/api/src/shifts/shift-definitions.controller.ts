@@ -3,7 +3,9 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ShiftDefinitionsService } from './shift-definitions.service';
 import { CreateShiftDefinitionDto } from './dto/create-shift-definition.dto';
 import { UpdateShiftDefinitionDto } from './dto/update-shift-definition.dto';
-import { Permissions } from '../auth/decorators/permissions.decorator';
+import { AnyPermission, Permissions } from '../auth/decorators/permissions.decorator';
+
+const VIEW = ['shifts.view', 'shifts.manage'];
 
 @ApiTags('shift-definitions')
 @ApiBearerAuth()
@@ -16,12 +18,12 @@ export class ShiftDefinitionsController {
     return this.definitions.create(dto);
   }
 
-  @Get() @Permissions('shifts.manage')
+  @Get() @AnyPermission(...VIEW)
   list(@Query('includeInactive') includeInactive?: string) {
     return this.definitions.list(includeInactive === 'true');
   }
 
-  @Get(':id') @Permissions('shifts.manage')
+  @Get(':id') @AnyPermission(...VIEW)
   get(@Param('id') id: string) {
     return this.definitions.get(id);
   }

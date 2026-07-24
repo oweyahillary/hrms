@@ -4,7 +4,11 @@ import { PayrollRunsService } from './payroll-runs.service';
 import { PayslipPdfService } from './payslip-pdf.service';
 import { CreatePayrollRunDto } from './dto/create-payroll-run.dto';
 import { CreateCorrectionDto } from './dto/create-correction.dto';
-import { Permissions } from '../auth/decorators/permissions.decorator';
+import { AnyPermission, Permissions } from '../auth/decorators/permissions.decorator';
+
+// A payroll.finalize-only holder (a maker-checker "second approver") still
+// needs to see the run before locking it, so view access is any of the three.
+const VIEW = ['payroll.view', 'payroll.run', 'payroll.finalize'];
 
 @ApiTags('payroll-runs')
 @ApiBearerAuth()
@@ -20,10 +24,10 @@ export class PayrollRunsController {
     return this.runs.create(dto, faultInject);
   }
 
-  @Get() @Permissions('payroll.run')
+  @Get() @AnyPermission(...VIEW)
   list() { return this.runs.list(); }
 
-  @Get(':id') @Permissions('payroll.run')
+  @Get(':id') @AnyPermission(...VIEW)
   findOne(@Param('id') id: string) { return this.runs.findOne(id); }
 
   @Post(':id/finalize') @Permissions('payroll.finalize')
@@ -52,7 +56,7 @@ export class PayrollRunsController {
   }
 
   // Download a single payslip's PDF.
-  @Get(':id/payslips/:pid/pdf') @Permissions('payroll.run')
+  @Get(':id/payslips/:pid/pdf') @AnyPermission(...VIEW)
   async downloadPayslipPdf(
     @Param('id') id: string,
     @Param('pid') pid: string,

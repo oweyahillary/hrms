@@ -6,11 +6,12 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ShiftRosterService } from './shift-roster.service';
 import { UpsertRosterDto } from './dto/upsert-roster.dto';
 import { QueryRosterDto } from './dto/query-roster.dto';
-import { Permissions } from '../auth/decorators/permissions.decorator';
+import { AnyPermission, Permissions } from '../auth/decorators/permissions.decorator';
 
 interface UploadedFileLike { buffer: Buffer; originalname: string; mimetype: string }
 
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+const VIEW = ['shifts.view', 'shifts.manage'];
 
 /** Explicit ?format= wins; otherwise inferred from the upload's mimetype/filename. */
 function resolveFormat(explicit: string | undefined, file: UploadedFileLike): 'csv' | 'xlsx' {
@@ -25,7 +26,7 @@ function resolveFormat(explicit: string | undefined, file: UploadedFileLike): 'c
 export class ShiftRosterController {
   constructor(private readonly roster: ShiftRosterService) {}
 
-  @Get() @Permissions('shifts.manage')
+  @Get() @AnyPermission(...VIEW)
   get(@Query() query: QueryRosterDto) {
     return this.roster.getRoster(query);
   }

@@ -48,6 +48,12 @@ export class RolesController {
     return PERMISSIONS;
   }
 
+  /** Ready-made permission sets for the "New role" picker. Also before ':id'. */
+  @Get('templates')
+  templates() {
+    return this.users.templates();
+  }
+
   @Get()
   list() {
     return this.users.listRoles();

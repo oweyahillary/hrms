@@ -24,12 +24,15 @@ export class EmployeesController {
     return this.employees.create(dto, user);
   }
 
-  // The list payload carries no PII (see LIST_SELECT), so unlike the other
-  // reads it doesn't need the caller's permissions to decide masking. Not
-  // gated on any permission today (pre-dates this migration; see PR notes).
+  // The list payload carries no PII (see LIST_SELECT) — employees.view still
+  // gates it (and scopes it to OWN_DEPARTMENT where applicable) because it's
+  // the org's staff directory, not because of what's on the row. Previously
+  // ungated (any authenticated user); this migration closes that gap — see
+  // the PR notes for why that's not a pure refactor for Manager/Employee.
   @Get()
-  list(@Query() query: ListEmployeesDto) {
-    return this.employees.list(query);
+  @Permissions('employees.view')
+  list(@Query() query: ListEmployeesDto, @CurrentUser() user: AuthUser) {
+    return this.employees.list(query, user);
   }
 
   // Declared BEFORE :id so '/employees/lookup' isn't captured as an id.
@@ -50,6 +53,7 @@ export class EmployeesController {
   }
 
   @Get(':id')
+  @Permissions('employees.view')
   get(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.employees.get(id, user);
   }

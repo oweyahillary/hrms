@@ -2,7 +2,8 @@ import {
   BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException,
 } from '@nestjs/common';
 import { PRISMA, type ExtendedPrismaClient } from '../prisma/prisma.service';
-import { resolveRolePermissions } from '../auth/permissions';
+import { resolveRolePermissions, hasPermission, effectiveScope, scopeFor } from '../auth/permissions';
+import { DepartmentScopeService } from '../auth/department-scope.service';
 import type { AuthUser } from '../auth/decorators/current-user.decorator';
 import {
   availableDaysAsOf, carryOverLastUsableDate, countWorkingDays, expiredCarryOverDays, toISODate,
@@ -25,8 +26,9 @@ interface RequestRow {
 }
 
 const num = (v: unknown): number => Number(v ?? 0);
-/** "Can act on behalf of others" for leave — the leave.manage permission (formerly: any HR_MANAGEMENT_ROLES name). */
-const isPrivileged = (actor: AuthUser) => actor.permissions.includes('leave.manage');
+const VIEW_KEYS = ['leave.view', 'leave.manage', 'leave.approve'];
+/** "Can act on behalf of others" for leave (create/cancel) — leave.manage specifically, not view/approve. */
+const isPrivileged = (actor: AuthUser) => hasPermission(actor.permissions, 'leave.manage');
 
 const requestInclude = {
   approvalSteps: { orderBy: { stepOrder: 'asc' as const } },
@@ -40,7 +42,10 @@ const requestInclude = {
 
 @Injectable()
 export class LeaveRequestsService {
-  constructor(@Inject(PRISMA) private readonly prisma: ExtendedPrismaClient) {}
+  constructor(
+    @Inject(PRISMA) private readonly prisma: ExtendedPrismaClient,
+    private readonly deptScope: DepartmentScopeService,
+  ) {}
 
   async create(dto: CreateLeaveRequestDto, actor: AuthUser) {
     if (!isPrivileged(actor)) {
@@ -48,6 +53,8 @@ export class LeaveRequestsService {
       if (!mine || mine !== dto.employeeId) {
         throw new ForbiddenException('You can only request leave for yourself');
       }
+    } else {
+      await this.assertTargetInScope(actor, 'leave.manage', dto.employeeId, 'You can only create leave for someone in your own department');
     }
 
     const [emp, type] = await Promise.all([
@@ -141,8 +148,14 @@ export class LeaveRequestsService {
     const where: Record<string, unknown> = {};
     if (query.status) where.status = query.status;
 
-    if (isPrivileged(actor)) {
+    const scope = effectiveScope(actor.permissions, VIEW_KEYS);
+    if (scope === 'ALL') {
       if (query.employeeId) where.employeeId = query.employeeId;
+    } else if (scope === 'OWN_DEPARTMENT') {
+      const ownDeptId = await this.deptScope.ownDepartmentId(actor.userId);
+      if (!ownDeptId) return []; // fail closed — no linked employee/department
+      where.employee = { departmentId: ownDeptId };
+      if (query.employeeId) where.employeeId = query.employeeId; // AND'd with the department filter above — can't escape it
     } else {
       where.employeeId = (await this.actorEmployeeId(actor.userId)) ?? '__none__';
     }
@@ -304,8 +317,12 @@ export class LeaveRequestsService {
     }>;
 
     return rows
-      // Anyone whose role grants leave.manage — same set HR_MANAGEMENT_ROLES named before this migration.
-      .filter((u) => resolveRolePermissions(u.role?.permissions).includes('leave.manage'))
+      // Anyone whose role grants leave.approve — same set leave.manage named
+      // (which itself named HR_MANAGEMENT_ROLES) before this migration split
+      // approving out as its own key. Org-wide by design: this is "who is a
+      // VALID candidate to choose", not "who can see MY request" — scope
+      // restricts the latter, not who shows up in the picker.
+      .filter((u) => hasPermission(resolveRolePermissions(u.role?.permissions), 'leave.approve'))
       .map((u) => ({
         id: u.id,
         // Prefer the human's name; fall back to the login when a user isn't
@@ -334,6 +351,8 @@ export class LeaveRequestsService {
     if (!isPrivileged(actor)) {
       const mine = await this.actorEmployeeId(actor.userId);
       if (mine !== row.employeeId) throw new ForbiddenException('You can only cancel your own request');
+    } else {
+      await this.assertTargetInScope(actor, 'leave.manage', row.employeeId, 'You can only cancel a request for someone in your own department');
     }
     await this.prisma.leaveRequest.update({ where: { id }, data: { status: 'CANCELLED' } as never });
     return this.get(id);
@@ -349,6 +368,14 @@ export class LeaveRequestsService {
     if (current.approverUserId !== actor.userId) {
       throw new ForbiddenException('It is not your turn to approve this request');
     }
+    // Identity (above) proves you're the assigned approver for this step;
+    // leave.approve + its scope additionally require the role itself to be
+    // allowed to approve at all, and — for an OWN_DEPARTMENT role — that the
+    // request belongs to your own department. Defense in depth: in normal
+    // use the assigned approver already comes from the right department (via
+    // resolveFor's department-head resolution), but a role's grant is the
+    // authoritative boundary, not an assumption about how chains are built.
+    await this.assertTargetInScope(actor, 'leave.approve', row.employeeId, 'You can only act on requests from your own department');
 
     // NOTE: sequential writes (each individually audited). Making the final
     // approval + balance deduction a single transaction is a hardening item.
@@ -384,6 +411,24 @@ export class LeaveRequestsService {
     })) as unknown as RequestRow | null;
     if (!row) throw new NotFoundException('Leave request not found');
     return row;
+  }
+
+  /**
+   * For an OWN_DEPARTMENT-scoped `key`, verify `targetEmployeeId` is in the
+   * actor's own department — fail CLOSED (throw, not silently no-op) if the
+   * actor has no resolvable department. ALL scope (or the key not held at
+   * all, which the route guard already would have blocked) is a no-op here.
+   */
+  private async assertTargetInScope(actor: AuthUser, key: string, targetEmployeeId: string, message: string): Promise<void> {
+    const scope = scopeFor(actor.permissions, key);
+    if (scope !== 'OWN_DEPARTMENT') return;
+    const ownDeptId = await this.deptScope.ownDepartmentId(actor.userId);
+    const target = (await this.prisma.employee.findFirst({
+      where: { id: targetEmployeeId }, select: { departmentId: true },
+    })) as unknown as { departmentId: string | null } | null;
+    if (!ownDeptId || !target || target.departmentId !== ownDeptId) {
+      throw new ForbiddenException(message);
+    }
   }
 
   private async actorEmployeeId(userId: string): Promise<string | null> {

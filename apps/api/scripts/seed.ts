@@ -31,11 +31,13 @@ async function main() {
 
   let role = await prisma.role.findFirst({ where: { organizationId: org.id, name: 'Admin' } });
   role ??= await prisma.role.create({
-    // Every permission, explicitly — see auth/permissions.ts. Not `{ all: true }`:
-    // that legacy shape is still HONOURED by resolveRolePermissions() for rows
-    // written before this migration, but new rows get a real, editable array so
-    // the Settings > Roles page renders every checkbox checked, not a black box.
-    data: { organizationId: org.id, name: 'Admin', permissions: [...PERMISSION_KEYS] },
+    // Every permission at scope ALL, explicitly — see auth/permissions.ts.
+    // Not `{ all: true }` or a bare string[]: those legacy shapes are still
+    // HONOURED by resolveRolePermissions() for rows written before this
+    // migration / before scope existed, but new rows get the real,
+    // editable {key,scope}[] shape so the Settings > Roles page renders
+    // every checkbox checked (not a black box) with the right scope picker state.
+    data: { organizationId: org.id, name: 'Admin', permissions: PERMISSION_KEYS.map((key) => ({ key, scope: 'ALL' })) },
   });
 
   const existing = await prisma.user.findFirst({ where: { organizationId: org.id, email } });

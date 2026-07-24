@@ -3,11 +3,14 @@ import {
 } from '@nestjs/common';
 import { PRISMA, type ExtendedPrismaClient } from '../prisma/prisma.service';
 import { PasswordService } from '../auth/password.service';
-import { resolveRolePermissions, ROLE_PERMISSION_DEFAULTS } from '../auth/permissions';
+import {
+  resolveRolePermissions, isScopeable, ROLE_PERMISSION_DEFAULTS, ROLE_TEMPLATES, type GrantedPermission,
+} from '../auth/permissions';
 import type { CreateUserDto } from './dto/create-user.dto';
 import type { UpdateUserDto } from './dto/update-user.dto';
 import type { CreateRoleDto } from './dto/create-role.dto';
 import type { UpdateRoleDto } from './dto/update-role.dto';
+import type { GrantedPermissionDto } from './dto/granted-permission.dto';
 
 interface RoleRow { id: string; name: string; permissions: unknown }
 /** The historically-known role names — see auth/permissions.ts. Not deletable (may still be renamed/re-permissioned). */
@@ -66,10 +69,15 @@ export class UsersService {
     return this.presentRole(role, role._count.users);
   }
 
+  /** Ready-made permission sets for the "New role" picker — see auth/permissions.ts's ROLE_TEMPLATES. */
+  templates() {
+    return ROLE_TEMPLATES;
+  }
+
   async createRole(dto: CreateRoleDto) {
     try {
       const role = (await this.prisma.role.create({
-        data: { name: dto.name, permissions: dto.permissions } as never,
+        data: { name: dto.name, permissions: this.normalize(dto.permissions) } as never,
       })) as unknown as RoleRow;
       return this.presentRole(role, 0);
     } catch (err) {
@@ -96,7 +104,7 @@ export class UsersService {
 
     const data: Record<string, unknown> = {};
     if (dto.name !== undefined) data.name = dto.name;
-    if (dto.permissions !== undefined) data.permissions = dto.permissions;
+    if (dto.permissions !== undefined) data.permissions = this.normalize(dto.permissions);
 
     try {
       const updated = (await this.prisma.role.update({
@@ -124,6 +132,19 @@ export class UsersService {
     }
     await this.prisma.role.delete({ where: { id } });
     return { success: true };
+  }
+
+  /**
+   * FORCES scope 'ALL' for any key that isn't scopeable — never trust the
+   * client's scope choice on its own. A picker that silently accepted
+   * OWN_DEPARTMENT for e.g. settings.manage would store a claim the backend
+   * never actually enforces, which is worse than no picker at all.
+   */
+  private normalize(permissions: GrantedPermissionDto[]): GrantedPermission[] {
+    return permissions.map((p) => ({
+      key: p.key,
+      scope: isScopeable(p.key) && p.scope === 'OWN_DEPARTMENT' ? 'OWN_DEPARTMENT' : 'ALL',
+    }));
   }
 
   private presentRole(r: RoleRow, userCount: number) {

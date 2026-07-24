@@ -12,10 +12,16 @@
  *
  * For every Role in every org whose NAME matches one of the historically-
  * known names (see auth/permissions.ts's ROLE_PERMISSION_DEFAULTS), this
- * overwrites `permissions` to the set that reproduces its PRE-migration
- * access exactly. A role with a name OUTSIDE that set (a genuine custom role,
- * or one already migrated) is left untouched — this never clobbers a
- * hand-picked permission list.
+ * overwrites `permissions` to the {key,scope} set that reproduces its
+ * PRE-migration access exactly (every key at scope ALL — the coarser
+ * catalogues that came before this one had no scope concept). A role with a
+ * name OUTSIDE that set (a genuine custom role, or one already migrated) is
+ * left untouched — this never clobbers a hand-picked permission list.
+ *
+ * Re-running after a LATER catalogue split (like this one, which broke
+ * leave.manage into leave.view/approve/manage etc.) is exactly what keeps a
+ * pre-existing "HR Manager" row's access identical across the split — safe
+ * and expected to run again each time the catalogue grows.
  *
  *   cd apps/api && npx ts-node scripts/backfill-role-permissions.ts
  */
@@ -35,7 +41,8 @@ async function main(): Promise<void> {
     // eslint-disable-next-line no-await-in-loop
     await base.role.update({ where: { id: role.id }, data: { permissions } });
     updated += 1;
-    console.log(`  ${role.name} (org ${role.organizationId}) -> [${permissions.join(', ') || '(none)'}]`);
+    const summary = permissions.map((p) => `${p.key}:${p.scope}`).join(', ') || '(none)';
+    console.log(`  ${role.name} (org ${role.organizationId}) -> [${summary}]`);
   }
 
   console.log(`\nBackfilled ${updated} role(s) across every organisation.`);

@@ -5,8 +5,7 @@ import { CreateOvertimePolicyDto } from './dto/create-overtime-policy.dto';
 import { UpdateOvertimePolicyDto } from './dto/update-overtime-policy.dto';
 import { Permissions } from '../auth/decorators/permissions.decorator';
 
-// payroll.manage is a temporary mapping — see the matching note in overtime.controller.ts.
-const MANAGE = 'payroll.manage';
+const MANAGE = 'overtime.manage';
 
 @ApiTags('overtime-policies')
 @ApiBearerAuth()

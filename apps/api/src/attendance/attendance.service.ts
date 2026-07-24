@@ -11,6 +11,9 @@ import {
 import type { Punch } from './punch-pairing';
 import type { UpsertAttendanceDto } from './dto/upsert-attendance.dto';
 import type { QueryAttendanceDto } from './dto/query-attendance.dto';
+import { effectiveScope } from '../auth/permissions';
+import { DepartmentScopeService } from '../auth/department-scope.service';
+import type { AuthUser } from '../auth/decorators/current-user.decorator';
 
 interface AttendanceRow {
   id: string; employeeId: string; date: Date;
@@ -23,7 +26,10 @@ const DEFAULT_GRACE_MINUTES = 15;
 
 @Injectable()
 export class AttendanceService {
-  constructor(@Inject(PRISMA) private readonly prisma: ExtendedPrismaClient) {}
+  constructor(
+    @Inject(PRISMA) private readonly prisma: ExtendedPrismaClient,
+    private readonly deptScope: DepartmentScopeService,
+  ) {}
 
   /** One record per employee/day: update the existing day's record or create it. */
   async upsert(dto: UpsertAttendanceDto) {
@@ -54,10 +60,27 @@ export class AttendanceService {
    * employeeId set. departmentId (only meaningful without employeeId)
    * narrows that register to one department via the employee relation.
    */
-  async list(query: QueryAttendanceDto) {
+  /**
+   * `actor` is omitted for internal calls (self-service's getAttendance,
+   * already employeeId-scoped to the caller's own record) — scope only
+   * applies to the HTTP route, where the caller might be browsing broadly.
+   */
+  async list(query: QueryAttendanceDto, actor?: AuthUser) {
     const where: Record<string, unknown> = {};
     if (query.employeeId) where.employeeId = query.employeeId;
     else if (query.departmentId) where.employee = { departmentId: query.departmentId };
+
+    if (actor) {
+      const scope = effectiveScope(actor.permissions, ['attendance.view', 'attendance.manage']);
+      if (scope === 'OWN_DEPARTMENT') {
+        const ownDeptId = await this.deptScope.ownDepartmentId(actor.userId);
+        if (!ownDeptId) return [];
+        // ANDs with employeeId above if both are set — an out-of-department
+        // employeeId then matches nothing rather than erroring.
+        where.employee = { departmentId: ownDeptId };
+      }
+    }
+
     if (query.from || query.to) {
       const range: Record<string, Date> = {};
       if (query.from) range.gte = new Date(`${query.from}T00:00:00.000Z`);
