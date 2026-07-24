@@ -10,6 +10,7 @@ import {
   createShiftDefinition, deleteShiftDefinition, listShiftDefinitions, updateShiftDefinition,
   type ShiftDefinition,
 } from '../api/shifts';
+import { getAttendanceSettings, updateAttendanceSettings } from '../api/organization';
 import { ApiError } from '../api/client';
 import { ErrorCard } from '../components/ErrorCard';
 import { EmptyState } from '../components/EmptyState';
@@ -40,6 +41,10 @@ export function SettingsShiftsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
+  const [graceMinutes, setGraceMinutes] = useState<number | string>('');
+  const [graceLoaded, setGraceLoaded] = useState(false);
+  const [graceSaving, setGraceSaving] = useState(false);
+
   const form = useForm<FormValues>({
     validateInputOnBlur: true,
     initialValues: {
@@ -66,6 +71,28 @@ export function SettingsShiftsPage() {
   }, []);
 
   useEffect(() => { void load(); }, [load, reloadKey]);
+
+  useEffect(() => {
+    void getAttendanceSettings()
+      .then((s) => { setGraceMinutes(s.lateGraceMinutes); setGraceLoaded(true); })
+      .catch(() => setGraceLoaded(true));
+  }, []);
+
+  const saveGrace = async () => {
+    setGraceSaving(true);
+    try {
+      const saved = await updateAttendanceSettings({ lateGraceMinutes: Number(graceMinutes) });
+      setGraceMinutes(saved.lateGraceMinutes);
+      notifications.show({ color: 'brand', icon: <IconCheck size={16} />, title: 'Grace period saved', message: '' });
+    } catch (e) {
+      notifications.show({
+        color: 'red', icon: <IconAlertTriangle size={16} />,
+        title: 'Could not save', message: e instanceof ApiError ? e.message : 'Something went wrong.',
+      });
+    } finally {
+      setGraceSaving(false);
+    }
+  };
 
   const openNew = () => {
     setEditing(null);
@@ -155,6 +182,21 @@ export function SettingsShiftsPage() {
         </div>
         <Button leftSection={<IconPlus size={16} />} onClick={openNew}>New shift</Button>
       </Group>
+
+      <Card p="lg" radius="md">
+        <Text fw={600} mb={4}>Late grace period</Text>
+        <Text size="sm" c="sand.6" mb="md">
+          Minutes after a shift&apos;s scheduled start before a clock-in counts as late rather than present.
+        </Text>
+        <Group align="flex-end">
+          <NumberInput
+            label="Grace minutes" min={0} max={180} allowDecimal={false} w={160}
+            disabled={!graceLoaded}
+            value={graceMinutes} onChange={setGraceMinutes}
+          />
+          <Button loading={graceSaving} disabled={!graceLoaded} onClick={() => void saveGrace()}>Save</Button>
+        </Group>
+      </Card>
 
       {error && <ErrorCard message={error} onRetry={() => setReloadKey((k) => k + 1)} retrying={loading} />}
 

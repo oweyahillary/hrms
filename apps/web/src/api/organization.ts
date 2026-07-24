@@ -55,6 +55,15 @@ export const getPayrollSettings = (): Promise<PayrollSettings> =>
 export const updatePayrollSettings = (patch: Partial<PayrollSettings>): Promise<PayrollSettings> =>
   api<PayrollSettings>('/organization/payroll-settings', { method: 'PATCH', body: JSON.stringify(patch) });
 
+export interface AttendanceSettings {
+  lateGraceMinutes: number;
+}
+export const getAttendanceSettings = (): Promise<AttendanceSettings> =>
+  api<AttendanceSettings>('/organization/attendance-settings', { method: 'GET' });
+
+export const updateAttendanceSettings = (patch: Partial<AttendanceSettings>): Promise<AttendanceSettings> =>
+  api<AttendanceSettings>('/organization/attendance-settings', { method: 'PATCH', body: JSON.stringify(patch) });
+
 /** PNG or JPEG, up to 2 MB (enforced server-side too). */
 export const uploadLogo = (file: File): Promise<{ hasLogo: boolean }> => {
   const form = new FormData();
