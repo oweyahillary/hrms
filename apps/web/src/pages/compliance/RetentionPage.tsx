@@ -133,7 +133,7 @@ export function RetentionPage() {
 
       {!error && (
         <Card p={0} radius="md">
-          <Box style={{ overflowX: 'auto' }}>
+          <Box visibleFrom="sm" style={{ overflowX: 'auto' }}>
             <Table.ScrollContainer minWidth={640}>
               <Table verticalSpacing="sm" highlightOnHover>
                 <Table.Thead>
@@ -178,6 +178,30 @@ export function RetentionPage() {
               </Table>
             </Table.ScrollContainer>
           </Box>
+
+          <Stack hiddenFrom="sm" gap={0} p="md">
+            {loading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} h={64} radius="sm" mb="sm" />)}
+            {!loading && rows.map((r) => (
+              <Card key={r.id} withBorder p="md" radius="sm" mb="sm">
+                <Group justify="space-between" mb={4}>
+                  <Text fw={600} size="sm">{r.recordType}</Text>
+                  <Text size="xs" c="sand.6">{yearsLabel(r.retentionPeriodMonths)}</Text>
+                </Group>
+                <Text size="xs" c="sand.6" lineClamp={2} mb={6}>{r.legalBasisNote || '—'}</Text>
+                <Group gap={4} wrap="nowrap">
+                  <Button size="compact-sm" variant="subtle" leftSection={<IconPencil size={13} />} onClick={() => openEdit(r)}>
+                    Edit
+                  </Button>
+                  <Button
+                    size="compact-sm" variant="subtle" color="red" leftSection={<IconTrash size={13} />}
+                    onClick={() => setDeleteTarget(r)}
+                  >
+                    Remove
+                  </Button>
+                </Group>
+              </Card>
+            ))}
+          </Stack>
 
           {!loading && rows.length === 0 && (
             <Box p="md">

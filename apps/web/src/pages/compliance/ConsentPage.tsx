@@ -126,7 +126,7 @@ export function ConsentPage() {
 
       {employeeId && !error && (
         <Card p={0} radius="md">
-          <Box style={{ overflowX: 'auto' }}>
+          <Box visibleFrom="sm" style={{ overflowX: 'auto' }}>
             <Table.ScrollContainer minWidth={640}>
               <Table verticalSpacing="sm" highlightOnHover>
                 <Table.Thead>
@@ -173,6 +173,30 @@ export function ConsentPage() {
               </Table>
             </Table.ScrollContainer>
           </Box>
+
+          <Stack hiddenFrom="sm" gap={0} p="md">
+            {loading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} h={64} radius="sm" mb="sm" />)}
+            {!loading && rows.map((r) => (
+              <Card key={r.id} withBorder p="md" radius="sm" mb="sm">
+                <Group justify="space-between" mb={4}>
+                  <Text fw={600} size="sm">{r.purpose}</Text>
+                  <Badge variant="light" size="sm" color={r.active ? 'brand' : 'sand'}>
+                    {r.active ? 'Granted' : 'Withdrawn'}
+                  </Badge>
+                </Group>
+                <Text size="xs" c="sand.6" mb={6}>{BASIS_LABEL[r.lawfulBasis]} · Granted {fmtDate(r.grantedAt)}</Text>
+                {r.active && (
+                  <Button
+                    size="compact-sm" variant="subtle" color="red"
+                    loading={withdrawingId === r.id}
+                    onClick={() => void doWithdraw(r.id)}
+                  >
+                    Withdraw
+                  </Button>
+                )}
+              </Card>
+            ))}
+          </Stack>
 
           {!loading && rows.length === 0 && (
             <Box p="md">

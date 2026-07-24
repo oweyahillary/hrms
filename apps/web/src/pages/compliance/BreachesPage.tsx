@@ -201,7 +201,7 @@ export function BreachesPage() {
 
       {!error && (
         <Card p={0} radius="md">
-          <Box style={{ overflowX: 'auto' }}>
+          <Box visibleFrom="sm" style={{ overflowX: 'auto' }}>
             <Table.ScrollContainer minWidth={720}>
               <Table verticalSpacing="sm" highlightOnHover>
                 <Table.Thead>
@@ -234,6 +234,23 @@ export function BreachesPage() {
               </Table>
             </Table.ScrollContainer>
           </Box>
+
+          <Stack hiddenFrom="sm" gap={0} p="md">
+            {loading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} h={64} radius="sm" mb="sm" />)}
+            {!loading && rows.map((b) => (
+              <Card key={b.id} withBorder p="md" radius="sm" mb="sm" onClick={() => setActive(b)} style={{ cursor: 'pointer' }}>
+                <Group justify="space-between" mb={4}>
+                  <Text fw={600} size="sm">{fmtDate(b.detectedAt)}</Text>
+                  <Badge variant="light" size="sm" color={STATUS_COLOR[b.status]}>{STATUS_LABEL[b.status]}</Badge>
+                </Group>
+                <Text size="xs" c="sand.6" lineClamp={2} mb={6}>{b.description}</Text>
+                <Group gap={6}>
+                  <Text size="xs" c="sand.6">{b.affectedEmployeeCount} affected</Text>
+                  <Badge variant="light" size="sm" color={ODPC_COLOR[b.odpc.status]}>{ODPC_LABEL[b.odpc.status]}</Badge>
+                </Group>
+              </Card>
+            ))}
+          </Stack>
 
           {!loading && rows.length === 0 && (
             <Box p="md">
