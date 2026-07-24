@@ -1,16 +1,33 @@
 /**
- * Prove the permissions migration end-to-end over HTTP:
- *  - a custom role with a narrow permission set can do exactly what it's
- *    granted and nothing more;
+ * Prove the granular permissions + department-scope model end-to-end over HTTP:
+ *  - the 25-key catalogue replaces the org-structure-admin 14-key one, split
+ *    into view/approve/manage wherever a real endpoint distinction exists;
+ *  - a custom role with a narrow grant (payroll.run only) can do exactly
+ *    that and nothing more — including the payroll.run-without-
+ *    payroll.finalize split (draft creation succeeds, finalize is refused);
+ *  - leave.view without leave.approve can list but not act;
+ *  - reports.view alone reaches reports and nothing else;
+ *  - OWN_DEPARTMENT scope is enforced at the ROW level, not just the route:
+ *    a Line Supervisor sees only their own department's leave/overtime/
+ *    attendance/employee rows, and is refused acting on another
+ *    department's row even where an identity check alone would allow it
+ *    (the assigned-approver test) — scope is a second, independent gate;
+ *  - OWN_DEPARTMENT scope with no linked employee record fails CLOSED
+ *    (empty results everywhere), never falls through to "everyone";
+ *  - a client-submitted OWN_DEPARTMENT scope on a non-scopeable key is
+ *    forced to ALL server-side, never trusted as submitted;
  *  - each seeded role (Admin, HR Manager, HR Officer, Manager, Employee)
- *    has EXACTLY the access it had before the refactor — asserted
- *    endpoint-by-endpoint, including the "Manager gets nothing" naming
- *    discrepancy this migration deliberately preserved;
+ *    has EXACTLY the access it had before this split — asserted both
+ *    against the stored grant (ROLE_PERMISSION_DEFAULTS) and
+ *    endpoint-by-endpoint, including the one deliberate exception this
+ *    migration (and the one before it) introduced: employees.view is a
+ *    NEW gate, so Manager/Employee now lose directory access they
+ *    previously had by default;
+ *  - the 5 role templates expose valid catalogue keys with the right scope;
  *  - pii.view still gates decrypted PII on GET /employees/:id;
- *  - the new Departments (active/deactivate/employee-count-guard/cycle
- *    guard) and Roles (seeded-not-deletable/in-use-not-deletable) admin
- *    surfaces work correctly;
- *  - two-org isolation holds in both directions for the new endpoints.
+ *  - the Departments and Roles admin surfaces still work correctly;
+ *  - two-org isolation holds in both directions, including for the newly
+ *    scoped endpoints.
  *
  *   cd apps/api && npx ts-node scripts/verify-permissions.ts
  *
@@ -20,6 +37,7 @@
 import 'dotenv/config';
 import { createPrismaClient, baseClientOf } from '../src/prisma/prisma.service';
 import { PasswordService } from '../src/auth/password.service';
+import { PERMISSION_KEYS, ROLE_PERMISSION_DEFAULTS, type GrantedPermission } from '../src/auth/permissions';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3000/api';
 
@@ -30,18 +48,24 @@ function check(label: string, ok: boolean, detail = ''): void {
   else { console.log(`  FAIL  ${label}${detail ? ` — ${detail}` : ''}`); fail += 1; }
 }
 
-interface PermissionDef { key: string; label: string; description: string }
-interface AdminRole { id: string; name: string; permissions: string[]; isSeeded: boolean; userCount: number }
+interface PermissionDef { key: string; label: string; description: string; resource: string; scopeable: boolean }
+interface AdminRole { id: string; name: string; permissions: GrantedPermission[]; isSeeded: boolean; userCount: number }
 interface AdminDepartment {
   id: string; name: string; parentDepartmentId: string | null; headEmployeeId: string | null;
   active: boolean; employeeCount: number; subDepartmentCount: number;
 }
 interface Employee { id: string; nationalId?: string }
+interface RoleTemplate { name: string; description: string; permissions: GrantedPermission[] }
+
+const sortedPerms = (perms: GrantedPermission[]): string[] => perms.map((p) => `${p.key}:${p.scope}`).sort();
 
 async function main(): Promise<void> {
   const stamp = Date.now();
   let nid = 0;
-  const nationalId = (): string => `${String(stamp).slice(-7)}${nid++}`;
+  // Fixed-width suffix (always 8 digits total) — this script now creates
+  // more than 10 employees per run, and a bare `nid++` would overflow the
+  // 7–8 digit nationalId format past the 10th call.
+  const nationalId = (): string => `${String(stamp).slice(-6)}${String(nid++).padStart(2, '0')}`;
 
   async function login(email: string, password: string): Promise<string> {
     const r = await fetch(`${BASE}/auth/login`, {
@@ -71,51 +95,102 @@ async function main(): Promise<void> {
         nationalId: nationalId(), employmentType: 'PERMANENT', hireDate: '2020-01-01',
       }),
     });
-    const emp = (await r.json()) as { id?: string };
-    if (!emp.id) throw new Error(`employee create failed for ${tag}`);
+    const emp = (await r.json()) as { id?: string; message?: unknown };
+    if (!emp.id) throw new Error(`employee create failed for ${tag}: ${r.status} ${JSON.stringify(emp)}`);
     return { id: emp.id };
+  }
+
+  async function assignDepartment(employeeId: string, departmentId: string): Promise<void> {
+    await fetch(`${BASE}/employees/${employeeId}`, { method: 'PATCH', headers: adminJson, body: JSON.stringify({ departmentId }) });
   }
 
   /**
    * A login with a DIRECTLY-created role (not via createLogin's fixed
    * GRANTABLE_ROLE_NAMES list — this is how a genuinely custom role, or a
    * seeded-name role in a fresh org, gets a real session to test against).
+   * `employeeId`, when given, links the login the way DepartmentScopeService
+   * needs to resolve "own department" — omit it to test the fail-closed path.
    */
-  async function loginAsRole(roleId: string, tag: string, orgId: string): Promise<string> {
+  async function loginAsRole(
+    roleId: string, tag: string, orgId: string, employeeId?: string,
+  ): Promise<{ token: string; userId: string }> {
     const email = `perm.${tag}.${stamp}@example.com`;
     const password = 'PermVerify123!';
-    await base.user.create({
+    const user = await base.user.create({
       data: {
         organizationId: orgId, email, passwordHash: await passwords.hash(password),
-        mustChangePassword: false, roleId,
+        mustChangePassword: false, roleId, employeeId: employeeId ?? null,
       },
     });
-    return login(email, password);
+    return { token: await login(email, password), userId: user.id };
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // (a) Permission catalogue
+  // (a) Permission catalogue — the 25-key split
   // ══════════════════════════════════════════════════════════════════════
   const catalogue = (await (await fetch(`${BASE}/roles/catalogue`, { headers: adminAuth })).json()) as PermissionDef[];
-  check('catalogue exposes a non-trivial set of permission keys', catalogue.length >= 10, String(catalogue.length));
-  check('catalogue includes payroll.run and payroll.finalize as DISTINCT keys',
-    catalogue.some((p) => p.key === 'payroll.run') && catalogue.some((p) => p.key === 'payroll.finalize'), JSON.stringify(catalogue.map((p) => p.key)));
+  check('catalogue exposes the full split key set', catalogue.length >= 24, String(catalogue.length));
+  const catalogueKeys = new Set(catalogue.map((p) => p.key));
+  for (const expected of [
+    'employees.view', 'employees.write', 'employees.anonymize', 'pii.view',
+    'leave.view', 'leave.approve', 'leave.manage',
+    'overtime.view', 'overtime.approve', 'overtime.manage',
+    'attendance.view', 'attendance.manage',
+    'shifts.view', 'shifts.manage',
+    'compliance.view', 'compliance.manage',
+    'payroll.view', 'payroll.run', 'payroll.finalize', 'payroll.manage',
+    'reports.view', 'settings.manage', 'statutory_rates.manage', 'org_structure.manage', 'users.manage',
+  ]) {
+    check(`catalogue includes ${expected}`, catalogueKeys.has(expected));
+  }
+  check(
+    'every catalogue entry carries resource + scopeable',
+    catalogue.every((p) => typeof p.resource === 'string' && p.resource.length > 0 && typeof p.scopeable === 'boolean'),
+    JSON.stringify(catalogue.find((p) => !p.resource || typeof p.scopeable !== 'boolean')),
+  );
+  for (const nonScopeable of [
+    'employees.write', 'employees.anonymize', 'pii.view', 'users.manage', 'org_structure.manage',
+    'shifts.view', 'shifts.manage', 'compliance.view', 'compliance.manage', 'settings.manage',
+    'statutory_rates.manage', 'payroll.view', 'payroll.run', 'payroll.finalize', 'payroll.manage',
+    'reports.view', 'attendance.manage',
+  ]) {
+    const def = catalogue.find((p) => p.key === nonScopeable);
+    check(`${nonScopeable} is correctly marked non-scopeable (OWN_DEPARTMENT would be meaningless for it)`, def?.scopeable === false, JSON.stringify(def));
+  }
+  for (const scopeable of [
+    'employees.view', 'leave.view', 'leave.approve', 'leave.manage',
+    'overtime.view', 'overtime.approve', 'overtime.manage', 'attendance.view',
+  ]) {
+    const def = catalogue.find((p) => p.key === scopeable);
+    check(`${scopeable} is correctly marked scopeable`, def?.scopeable === true, JSON.stringify(def));
+  }
 
   // ══════════════════════════════════════════════════════════════════════
-  // (b) A custom role with a narrow grant can do exactly what it's granted
+  // (b) A custom role with a narrow grant can do exactly what it's granted —
+  // also covers "payroll.run without payroll.finalize" (draft build
+  // succeeds, finalize is refused).
   // ══════════════════════════════════════════════════════════════════════
   const clerkRole = (await (await fetch(`${BASE}/roles`, {
-    method: 'POST', headers: adminJson, body: JSON.stringify({ name: `Payroll Clerk ${stamp}`, permissions: ['payroll.run'] }),
+    method: 'POST', headers: adminJson,
+    body: JSON.stringify({ name: `Payroll Clerk ${stamp}`, permissions: [{ key: 'payroll.run', scope: 'ALL' }] }),
   })).json()) as AdminRole;
-  check('custom role created with exactly the requested permission', clerkRole.permissions.length === 1 && clerkRole.permissions[0] === 'payroll.run', JSON.stringify(clerkRole));
+  check(
+    'custom role created with exactly the requested permission',
+    clerkRole.permissions.length === 1 && clerkRole.permissions[0].key === 'payroll.run' && clerkRole.permissions[0].scope === 'ALL',
+    JSON.stringify(clerkRole),
+  );
   check('a freshly-created custom role is not seeded', clerkRole.isSeeded === false, JSON.stringify(clerkRole));
 
-  const clerkToken = await loginAsRole(clerkRole.id, 'clerk', orgAId);
+  const { token: clerkToken } = await loginAsRole(clerkRole.id, 'clerk', orgAId);
   const clerkAuth = { Authorization: `Bearer ${clerkToken}` };
   const clerkJson = { Authorization: `Bearer ${clerkToken}`, 'Content-Type': 'application/json' };
 
-  const clerkMe = (await (await fetch(`${BASE}/auth/me`, { headers: clerkAuth })).json()) as { permissions?: string[] };
-  check('session payload carries exactly the role\'s permission set', JSON.stringify(clerkMe.permissions) === JSON.stringify(['payroll.run']), JSON.stringify(clerkMe.permissions));
+  const clerkMe = (await (await fetch(`${BASE}/auth/me`, { headers: clerkAuth })).json()) as { permissions?: GrantedPermission[] };
+  check(
+    "session payload carries exactly the role's permission set",
+    JSON.stringify(clerkMe.permissions) === JSON.stringify([{ key: 'payroll.run', scope: 'ALL' }]),
+    JSON.stringify(clerkMe.permissions),
+  );
 
   const clerkEmp = await makeEmployee('Clerk');
   await fetch(`${BASE}/employees/${clerkEmp.id}/salary-structures`, {
@@ -125,10 +200,13 @@ async function main(): Promise<void> {
     method: 'POST', headers: clerkJson, body: JSON.stringify({ periodMonth: 6, periodYear: 2099, employeeIds: [clerkEmp.id] }),
   });
   const clerkRun = (await clerkRunRes.json()) as { id?: string };
-  check('granted payroll.run: creating a payroll run succeeds', clerkRunRes.status === 201 || clerkRunRes.status === 200, String(clerkRunRes.status));
+  check('granted payroll.run: creating a DRAFT payroll run succeeds', clerkRunRes.status === 201 || clerkRunRes.status === 200, String(clerkRunRes.status));
+
+  const clerkViewRes = await fetch(`${BASE}/payroll/runs/${clerkRun.id}`, { headers: clerkAuth });
+  check('granted payroll.run: the draft is visible (AnyPermission view set includes payroll.run)', clerkViewRes.status === 200, String(clerkViewRes.status));
 
   const clerkFinalizeRes = await fetch(`${BASE}/payroll/runs/${clerkRun.id}/finalize`, { method: 'POST', headers: clerkAuth });
-  check('NOT granted payroll.finalize: finalizing is refused (403)', clerkFinalizeRes.status === 403, String(clerkFinalizeRes.status));
+  check('NOT granted payroll.finalize: finalizing the draft is refused (403)', clerkFinalizeRes.status === 403, String(clerkFinalizeRes.status));
 
   const clerkDeptRes = await fetch(`${BASE}/departments`, { method: 'POST', headers: clerkJson, body: JSON.stringify({ name: 'Should not be created' }) });
   check('NOT granted org_structure.manage: creating a department is refused (403)', clerkDeptRes.status === 403, String(clerkDeptRes.status));
@@ -139,8 +217,47 @@ async function main(): Promise<void> {
   });
   check('NOT granted employees.write: creating an employee is refused (403)', clerkEmpWriteRes.status === 403, String(clerkEmpWriteRes.status));
 
+  const clerkReportsRes = await fetch(`${BASE}/reports/headcount`, { headers: clerkAuth });
+  check('NOT granted reports.view: reports are refused (403)', clerkReportsRes.status === 403, String(clerkReportsRes.status));
+
   // ══════════════════════════════════════════════════════════════════════
-  // (c) Seeded roles: effective access unchanged, endpoint-by-endpoint
+  // (c) leave.view WITHOUT leave.approve: can list, cannot act
+  // ══════════════════════════════════════════════════════════════════════
+  const viewerRole = (await (await fetch(`${BASE}/roles`, {
+    method: 'POST', headers: adminJson,
+    body: JSON.stringify({ name: `Leave Viewer ${stamp}`, permissions: [{ key: 'leave.view', scope: 'ALL' }] }),
+  })).json()) as AdminRole;
+  const { token: viewerToken } = await loginAsRole(viewerRole.id, 'leaveviewer', orgAId);
+  const viewerAuth = { Authorization: `Bearer ${viewerToken}` };
+  const viewerListRes = await fetch(`${BASE}/leave-requests`, { headers: viewerAuth });
+  check('leave.view alone: listing leave requests succeeds', viewerListRes.status === 200, String(viewerListRes.status));
+  const viewerApproveRes = await fetch(`${BASE}/leave-requests/00000000-0000-0000-0000-000000000000/approve`, { method: 'POST', headers: viewerAuth });
+  check('leave.view alone (no leave.approve): approving is refused (403)', viewerApproveRes.status === 403, String(viewerApproveRes.status));
+
+  // ══════════════════════════════════════════════════════════════════════
+  // (d) reports.view alone reaches reports and nothing else
+  // ══════════════════════════════════════════════════════════════════════
+  const reportsRole = (await (await fetch(`${BASE}/roles`, {
+    method: 'POST', headers: adminJson,
+    body: JSON.stringify({ name: `Reports Only ${stamp}`, permissions: [{ key: 'reports.view', scope: 'ALL' }] }),
+  })).json()) as AdminRole;
+  const { token: reportsToken } = await loginAsRole(reportsRole.id, 'reportsonly', orgAId);
+  const reportsAuth = { Authorization: `Bearer ${reportsToken}` };
+  const reportsHeadcountRes = await fetch(`${BASE}/reports/headcount`, { headers: reportsAuth });
+  check('reports.view alone: reports ARE reachable', reportsHeadcountRes.status === 200, String(reportsHeadcountRes.status));
+  const reportsRunsRes = await fetch(`${BASE}/payroll/runs`, { headers: reportsAuth });
+  check("reports.view alone: payroll runs are NOT reachable (reports.view isn't in that route's AnyPermission set)", reportsRunsRes.status === 403, String(reportsRunsRes.status));
+  const reportsEmpRes = await fetch(`${BASE}/employees`, { headers: reportsAuth });
+  check('reports.view alone: the employee directory is NOT reachable', reportsEmpRes.status === 403, String(reportsEmpRes.status));
+  const reportsDeptRes = await fetch(`${BASE}/departments`, {
+    method: 'POST', headers: { Authorization: `Bearer ${reportsToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Should not be created' }),
+  });
+  check('reports.view alone: department management is NOT reachable', reportsDeptRes.status === 403, String(reportsDeptRes.status));
+
+  // ══════════════════════════════════════════════════════════════════════
+  // (e) Seeded roles: effective access unchanged — both the stored grant
+  // (against the source of truth every backfill run uses) and
+  // endpoint-by-endpoint.
   // ══════════════════════════════════════════════════════════════════════
   async function provisionByCreateLogin(employeeId: string, email: string, roleName: string): Promise<string> {
     const created = await fetch(`${BASE}/employees/${employeeId}/create-login`, {
@@ -176,7 +293,20 @@ async function main(): Promise<void> {
   const employeeAuth = { Authorization: `Bearer ${employeeToken}` };
   const employeeJson = { Authorization: `Bearer ${employeeToken}`, 'Content-Type': 'application/json' };
 
-  // HR Manager / HR Officer: full HR access, but NOT users.manage / statutory_rates.manage / employees.anonymize (Admin-only before this migration too).
+  for (const [label, auth] of [
+    ['HR Manager', hrMgrAuth], ['HR Officer', hrOfficerAuth], ['Manager', managerAuth], ['Employee', employeeAuth],
+  ] as const) {
+    const me = (await (await fetch(`${BASE}/auth/me`, { headers: auth })).json()) as { permissions?: GrantedPermission[] };
+    const expected = sortedPerms([...(ROLE_PERMISSION_DEFAULTS[label] ?? [])]);
+    const actual = sortedPerms(me.permissions ?? []);
+    check(
+      `${label}'s stored permission set exactly matches ROLE_PERMISSION_DEFAULTS (full 25-key matrix unchanged)`,
+      JSON.stringify(actual) === JSON.stringify(expected),
+      JSON.stringify({ expected, actual }),
+    );
+  }
+
+  // HR Manager / HR Officer: full HR access except the three still Admin-only.
   for (const [label, auth, json] of [
     ['HR Manager', hrMgrAuth, hrMgrJson],
     ['HR Officer', hrOfficerAuth, hrOfficerJson],
@@ -198,13 +328,31 @@ async function main(): Promise<void> {
       body: JSON.stringify({ periodMonth: 7, periodYear: 2099, employeeIds: [] }),
     });
     check(`${label} CAN reach payroll run creation (payroll.run)`, runAttempt.status !== 403, String(runAttempt.status));
+
+    const reportsRes = await fetch(`${BASE}/reports/headcount`, { headers: auth });
+    check(`${label} CAN reach reports (reports.view — new split key, was folded into payroll.manage before)`, reportsRes.status === 200, String(reportsRes.status));
+
+    const leaveApproveRes = await fetch(`${BASE}/leave-requests/00000000-0000-0000-0000-000000000000/approve`, { method: 'POST', headers: auth });
+    check(`${label} holds leave.approve (route reachable — new split key)`, leaveApproveRes.status !== 403, String(leaveApproveRes.status));
+
+    const overtimeApproveRes = await fetch(`${BASE}/overtime/00000000-0000-0000-0000-000000000000/approve`, { method: 'POST', headers: auth });
+    check(`${label} holds overtime.approve (route reachable — new split key)`, overtimeApproveRes.status !== 403, String(overtimeApproveRes.status));
+
+    const anonymizeRes = await fetch(`${BASE}/employees/${hrMgrEmp.id}/anonymize`, { method: 'POST', headers: auth });
+    check(`${label} CANNOT anonymize employees (employees.anonymize is Admin-only, unchanged)`, anonymizeRes.status === 403, String(anonymizeRes.status));
   }
 
-  // Manager: the naming discrepancy this migration deliberately preserved — zero elevated access, identical to Employee.
+  // Manager: the naming discrepancy this migration (and the one before it)
+  // deliberately preserved — zero elevated access, identical to Employee.
   const mgrDeptRes = await fetch(`${BASE}/departments`, { method: 'POST', headers: managerJson, body: JSON.stringify({ name: 'Should not be created' }) });
   check('Manager role CANNOT manage departments (preserves the pre-migration "Manager has no elevated access" behaviour)', mgrDeptRes.status === 403, String(mgrDeptRes.status));
+
   const mgrEmployeesListRes = await fetch(`${BASE}/employees`, { headers: managerAuth });
-  check('Manager CAN still reach the (deliberately ungated) employee list', mgrEmployeesListRes.status === 200, String(mgrEmployeesListRes.status));
+  check(
+    'Manager CANNOT reach the employee directory — DELIBERATE EXCEPTION, not a pure refactor: employees.view is a NEW gate (previously any authenticated user could list employees); Manager/Employee lose access that HR-capable roles keep',
+    mgrEmployeesListRes.status === 403, String(mgrEmployeesListRes.status),
+  );
+
   const mgrCreateRes = await fetch(`${BASE}/employees`, {
     method: 'POST', headers: managerJson,
     body: JSON.stringify({ employeeNumber: `MGRFAIL-${stamp}`, firstName: 'X', lastName: 'Y', nationalId: nationalId(), employmentType: 'PERMANENT', hireDate: '2020-01-01' }),
@@ -218,7 +366,7 @@ async function main(): Promise<void> {
   check('Employee CAN still reach their own self-service profile', meProfileRes.status === 200, String(meProfileRes.status));
 
   // ══════════════════════════════════════════════════════════════════════
-  // (d) pii.view still gates decrypted PII
+  // (f) pii.view still gates decrypted PII
   // ══════════════════════════════════════════════════════════════════════
   const piiTargetNatId = nationalId();
   const piiTargetRes = await fetch(`${BASE}/employees`, {
@@ -230,11 +378,11 @@ async function main(): Promise<void> {
   const viaHrOfficer = (await (await fetch(`${BASE}/employees/${piiTarget.id}`, { headers: hrOfficerAuth })).json()) as { nationalId?: string; piiMasked?: boolean };
   check('HR Officer (has pii.view) sees the UNMASKED national ID', viaHrOfficer.nationalId === piiTargetNatId && viaHrOfficer.piiMasked === false, JSON.stringify(viaHrOfficer));
 
-  const viaManager = (await (await fetch(`${BASE}/employees/${piiTarget.id}`, { headers: managerAuth })).json()) as { nationalId?: string; piiMasked?: boolean };
-  check('Manager (no pii.view) sees a MASKED national ID', viaManager.nationalId !== piiTargetNatId && viaManager.nationalId?.startsWith('*') === true && viaManager.piiMasked === true, JSON.stringify(viaManager));
+  const viaAdmin = (await (await fetch(`${BASE}/employees/${piiTarget.id}`, { headers: adminAuth })).json()) as { nationalId?: string; piiMasked?: boolean };
+  check('Admin (has pii.view) sees the UNMASKED national ID', viaAdmin.nationalId === piiTargetNatId && viaAdmin.piiMasked === false, JSON.stringify(viaAdmin));
 
   // ══════════════════════════════════════════════════════════════════════
-  // (e) Departments admin surface: active/deactivate/cycle guard/employee-count guard
+  // (g) Departments admin surface: active/deactivate/cycle guard/employee-count guard
   // ══════════════════════════════════════════════════════════════════════
   const parentDept = (await (await fetch(`${BASE}/departments`, { method: 'POST', headers: adminJson, body: JSON.stringify({ name: `Parent ${stamp}` }) })).json()) as AdminDepartment;
   const childDept = (await (await fetch(`${BASE}/departments`, {
@@ -255,7 +403,7 @@ async function main(): Promise<void> {
   await fetch(`${BASE}/departments/${childDept.id}`, { method: 'PATCH', headers: adminJson, body: JSON.stringify({ active: true }) });
 
   const deptEmp = await makeEmployee('DeptGuard');
-  await fetch(`${BASE}/employees/${deptEmp.id}`, { method: 'PATCH', headers: adminJson, body: JSON.stringify({ departmentId: childDept.id }) });
+  await assignDepartment(deptEmp.id, childDept.id);
   const blockedDeleteRes = await fetch(`${BASE}/departments/${childDept.id}`, { method: 'DELETE', headers: adminAuth });
   const blockedDeleteBody = (await blockedDeleteRes.json()) as { message?: string };
   check('deleting a department with an assigned employee is blocked (409) and reports the count', blockedDeleteRes.status === 409 && (blockedDeleteBody.message ?? '').includes('1'), JSON.stringify(blockedDeleteBody));
@@ -265,11 +413,17 @@ async function main(): Promise<void> {
   check('deleting an empty, leaf department succeeds once the employee is reassigned', cleanDeleteRes.status === 200, String(cleanDeleteRes.status));
 
   // ══════════════════════════════════════════════════════════════════════
-  // (f) Roles admin surface: seeded-not-deletable, in-use-not-deletable, Admin can't be renamed
+  // (h) Roles admin surface: seeded-not-deletable, in-use-not-deletable,
+  // Admin can't be renamed, and the server-side scope-forcing guarantee.
   // ══════════════════════════════════════════════════════════════════════
   const roleList = (await (await fetch(`${BASE}/roles`, { headers: adminAuth })).json()) as AdminRole[];
   const adminRole = roleList.find((r) => r.name === 'Admin');
   check('Admin role is reported as seeded', adminRole?.isSeeded === true, JSON.stringify(adminRole));
+  check(
+    'Admin role holds every catalogue key, each at scope ALL',
+    adminRole!.permissions.length === PERMISSION_KEYS.length && adminRole!.permissions.every((p) => p.scope === 'ALL'),
+    JSON.stringify(adminRole),
+  );
 
   const renameAdminRes = await fetch(`${BASE}/roles/${adminRole!.id}`, { method: 'PATCH', headers: adminJson, body: JSON.stringify({ name: 'Not Admin Anymore' }) });
   check('the Admin role cannot be renamed', renameAdminRes.status === 409, String(renameAdminRes.status));
@@ -286,11 +440,203 @@ async function main(): Promise<void> {
   const deleteSpareRes = await fetch(`${BASE}/roles/${spareRole.id}`, { method: 'DELETE', headers: adminAuth });
   check('an unused custom role can be deleted', deleteSpareRes.status === 200, String(deleteSpareRes.status));
 
+  // The riskiest line in this whole migration: a client-submitted
+  // OWN_DEPARTMENT scope on a non-scopeable key must be FORCED to ALL
+  // server-side, never trusted as submitted (see UsersService.normalize()).
+  const scopeAbuseRole = (await (await fetch(`${BASE}/roles`, {
+    method: 'POST', headers: adminJson,
+    body: JSON.stringify({ name: `Scope Abuse ${stamp}`, permissions: [{ key: 'settings.manage', scope: 'OWN_DEPARTMENT' }] }),
+  })).json()) as AdminRole;
+  check(
+    'a client-submitted OWN_DEPARTMENT scope on a non-scopeable key is FORCED to ALL server-side',
+    scopeAbuseRole.permissions.length === 1 && scopeAbuseRole.permissions[0].key === 'settings.manage' && scopeAbuseRole.permissions[0].scope === 'ALL',
+    JSON.stringify(scopeAbuseRole),
+  );
+
   // ══════════════════════════════════════════════════════════════════════
-  // (g) Two-org isolation, both directions, for the new endpoints
+  // (i) Role templates
+  // ══════════════════════════════════════════════════════════════════════
+  const templates = (await (await fetch(`${BASE}/roles/templates`, { headers: adminAuth })).json()) as RoleTemplate[];
+  const EXPECTED_TEMPLATE_NAMES = ['Payroll Officer', 'Line Supervisor', 'HR Assistant', 'Accountant', 'Compliance Officer'];
+  check(
+    'exactly the 5 expected role templates are exposed',
+    templates.length === 5 && EXPECTED_TEMPLATE_NAMES.every((n) => templates.some((t) => t.name === n)),
+    JSON.stringify(templates.map((t) => t.name)),
+  );
+  check(
+    'every template permission key exists in the catalogue',
+    templates.every((t) => t.permissions.every((p) => catalogueKeys.has(p.key))),
+    JSON.stringify(templates.map((t) => t.permissions.map((p) => p.key))),
+  );
+  const lineSupervisorTpl = templates.find((t) => t.name === 'Line Supervisor');
+  check(
+    'Line Supervisor template scopes every permission to OWN_DEPARTMENT (matches its description)',
+    !!lineSupervisorTpl && lineSupervisorTpl.permissions.length > 0 && lineSupervisorTpl.permissions.every((p) => p.scope === 'OWN_DEPARTMENT'),
+    JSON.stringify(lineSupervisorTpl),
+  );
+  const payrollOfficerTpl = templates.find((t) => t.name === 'Payroll Officer');
+  check(
+    'Payroll Officer template does NOT include payroll.finalize (maker-checker)',
+    !!payrollOfficerTpl && !payrollOfficerTpl.permissions.some((p) => p.key === 'payroll.finalize'),
+    JSON.stringify(payrollOfficerTpl),
+  );
+
+  // ══════════════════════════════════════════════════════════════════════
+  // (j) Row-level department scope — the riskiest property: scope must
+  // filter DATA, not just gate the route. A Line Supervisor must see and
+  // act on ONLY their own department's rows, and be refused acting on
+  // another department's row even where an identity check alone would
+  // allow it.
+  // ══════════════════════════════════════════════════════════════════════
+  const deptOwn = (await (await fetch(`${BASE}/departments`, { method: 'POST', headers: adminJson, body: JSON.stringify({ name: `Own Dept ${stamp}` }) })).json()) as AdminDepartment;
+  const deptOther = (await (await fetch(`${BASE}/departments`, { method: 'POST', headers: adminJson, body: JSON.stringify({ name: `Other Dept ${stamp}` }) })).json()) as AdminDepartment;
+
+  const supervisorEmp = await makeEmployee('Supervisor');
+  await assignDepartment(supervisorEmp.id, deptOwn.id);
+  const ownDeptWorker = await makeEmployee('OwnDeptWorker');
+  await assignDepartment(ownDeptWorker.id, deptOwn.id);
+  const otherDeptWorker = await makeEmployee('OtherDeptWorker');
+  await assignDepartment(otherDeptWorker.id, deptOther.id);
+
+  const supervisorRole = (await (await fetch(`${BASE}/roles`, {
+    method: 'POST', headers: adminJson,
+    body: JSON.stringify({
+      name: `Line Supervisor ${stamp}`,
+      permissions: [
+        { key: 'employees.view', scope: 'OWN_DEPARTMENT' },
+        { key: 'leave.view', scope: 'OWN_DEPARTMENT' },
+        { key: 'leave.approve', scope: 'OWN_DEPARTMENT' },
+        { key: 'overtime.view', scope: 'OWN_DEPARTMENT' },
+        { key: 'overtime.approve', scope: 'OWN_DEPARTMENT' },
+        { key: 'attendance.view', scope: 'OWN_DEPARTMENT' },
+      ],
+    }),
+  })).json()) as AdminRole;
+  // The supervisor's OWN login must be linked to an employee IN deptOwn —
+  // that link is how DepartmentScopeService resolves "own department".
+  const { token: supervisorToken, userId: supervisorUserId } = await loginAsRole(supervisorRole.id, 'supervisor', orgAId, supervisorEmp.id);
+  const supervisorAuth = { Authorization: `Bearer ${supervisorToken}` };
+
+  // --- employees.view row-level ---
+  const supEmpListRes = await fetch(`${BASE}/employees?pageSize=100`, { headers: supervisorAuth });
+  const supEmpList = (await supEmpListRes.json()) as { data: Array<{ id: string }> };
+  check("Line Supervisor employee list includes their own department's worker", supEmpList.data.some((e) => e.id === ownDeptWorker.id), JSON.stringify(supEmpList.data.map((e) => e.id)));
+  check("Line Supervisor employee list EXCLUDES the other department's worker (row-level)", !supEmpList.data.some((e) => e.id === otherDeptWorker.id), JSON.stringify(supEmpList.data.map((e) => e.id)));
+  const supEmpGetOtherRes = await fetch(`${BASE}/employees/${otherDeptWorker.id}`, { headers: supervisorAuth });
+  check("Line Supervisor fetching the other department's employee by id gets 404 (not just filtered from lists)", supEmpGetOtherRes.status === 404, String(supEmpGetOtherRes.status));
+
+  // --- leave: list + the identity-vs-scope proof ---
+  const leaveType = (await (await fetch(`${BASE}/leave-types`, {
+    method: 'POST', headers: adminJson,
+    body: JSON.stringify({ name: `Verify Leave Type ${stamp}`, isPaid: true, requiresApproval: true, accrualMethod: 'NONE' }),
+  })).json()) as { id: string };
+
+  const leaveReqOwn = await base.leaveRequest.create({
+    data: {
+      organizationId: orgAId, employeeId: ownDeptWorker.id, leaveTypeId: leaveType.id,
+      startDate: new Date('2099-03-01'), endDate: new Date('2099-03-02'), daysRequested: 2, status: 'PENDING',
+      approvalSteps: { create: [{ stepOrder: 0, approverUserId: supervisorUserId }] },
+    },
+  });
+  const leaveReqOther = await base.leaveRequest.create({
+    data: {
+      organizationId: orgAId, employeeId: otherDeptWorker.id, leaveTypeId: leaveType.id,
+      startDate: new Date('2099-03-01'), endDate: new Date('2099-03-02'), daysRequested: 2, status: 'PENDING',
+      // Same supervisor as the assigned approver on BOTH requests — isolates
+      // the test to scope alone: identity passes either way, so only
+      // department membership can be what blocks the second one.
+      approvalSteps: { create: [{ stepOrder: 0, approverUserId: supervisorUserId }] },
+    },
+  });
+
+  const supLeaveListRes = await fetch(`${BASE}/leave-requests`, { headers: supervisorAuth });
+  const supLeaveList = (await supLeaveListRes.json()) as Array<{ id: string }>;
+  check("Line Supervisor leave list includes their own department's request", supLeaveList.some((r) => r.id === leaveReqOwn.id), JSON.stringify(supLeaveList.map((r) => r.id)));
+  check("Line Supervisor leave list EXCLUDES the other department's request (row-level)", !supLeaveList.some((r) => r.id === leaveReqOther.id), JSON.stringify(supLeaveList.map((r) => r.id)));
+
+  const supApproveOwnRes = await fetch(`${BASE}/leave-requests/${leaveReqOwn.id}/approve`, { method: 'POST', headers: supervisorAuth });
+  check("Line Supervisor CAN approve their own department's request (identity AND scope both satisfied)", supApproveOwnRes.status === 200 || supApproveOwnRes.status === 201, String(supApproveOwnRes.status));
+
+  const supApproveOtherRes = await fetch(`${BASE}/leave-requests/${leaveReqOther.id}/approve`, { method: 'POST', headers: supervisorAuth });
+  check(
+    'Line Supervisor is REFUSED approving the other department\'s request EVEN THOUGH they are the assigned approver — scope is a real, independent gate, not just the route',
+    supApproveOtherRes.status === 403, String(supApproveOtherRes.status),
+  );
+
+  // --- overtime: list + get + approve, same identity-vs-scope proof ---
+  const otOwn = await base.overtimeEntry.create({
+    data: { organizationId: orgAId, employeeId: ownDeptWorker.id, date: new Date('2099-04-01'), hours: 2, category: 'NORMAL_DAY', source: 'MANUAL', status: 'PENDING' },
+  });
+  const otOther = await base.overtimeEntry.create({
+    data: { organizationId: orgAId, employeeId: otherDeptWorker.id, date: new Date('2099-04-01'), hours: 2, category: 'NORMAL_DAY', source: 'MANUAL', status: 'PENDING' },
+  });
+
+  const supOtListRes = await fetch(`${BASE}/overtime`, { headers: supervisorAuth });
+  const supOtList = (await supOtListRes.json()) as Array<{ id: string }>;
+  check("Line Supervisor overtime list includes their own department's entry", supOtList.some((e) => e.id === otOwn.id), JSON.stringify(supOtList.map((e) => e.id)));
+  check("Line Supervisor overtime list EXCLUDES the other department's entry (row-level)", !supOtList.some((e) => e.id === otOther.id), JSON.stringify(supOtList.map((e) => e.id)));
+
+  const supOtGetOtherRes = await fetch(`${BASE}/overtime/${otOther.id}`, { headers: supervisorAuth });
+  check("Line Supervisor fetching the other department's overtime entry by id gets 404", supOtGetOtherRes.status === 404, String(supOtGetOtherRes.status));
+
+  const supOtApproveOwnRes = await fetch(`${BASE}/overtime/${otOwn.id}/approve`, { method: 'POST', headers: supervisorAuth });
+  check("Line Supervisor CAN approve their own department's overtime entry", supOtApproveOwnRes.status === 200 || supOtApproveOwnRes.status === 201, String(supOtApproveOwnRes.status));
+
+  const supOtApproveOtherRes = await fetch(`${BASE}/overtime/${otOther.id}/approve`, { method: 'POST', headers: supervisorAuth });
+  check("Line Supervisor is REFUSED approving the other department's overtime entry (row-level, not route-level)", supOtApproveOtherRes.status === 404, String(supOtApproveOtherRes.status));
+
+  // --- attendance: list-level row scoping (no approve concept here) ---
+  const attOwn = await base.attendanceRecord.create({
+    data: { organizationId: orgAId, employeeId: ownDeptWorker.id, date: new Date('2099-05-01'), status: 'PRESENT', source: 'MANUAL' },
+  });
+  const attOther = await base.attendanceRecord.create({
+    data: { organizationId: orgAId, employeeId: otherDeptWorker.id, date: new Date('2099-05-01'), status: 'PRESENT', source: 'MANUAL' },
+  });
+
+  const supAttListRes = await fetch(`${BASE}/attendance`, { headers: supervisorAuth });
+  const supAttList = (await supAttListRes.json()) as Array<{ id: string }>;
+  check("Line Supervisor attendance list includes their own department's record", supAttList.some((r) => r.id === attOwn.id), JSON.stringify(supAttList.map((r) => r.id)));
+  check("Line Supervisor attendance list EXCLUDES the other department's record (row-level)", !supAttList.some((r) => r.id === attOther.id), JSON.stringify(supAttList.map((r) => r.id)));
+
+  // ══════════════════════════════════════════════════════════════════════
+  // (k) Fail CLOSED: OWN_DEPARTMENT scope with no linked employee record
+  // gets NOTHING, never everything.
+  // ══════════════════════════════════════════════════════════════════════
+  const noLinkRole = (await (await fetch(`${BASE}/roles`, {
+    method: 'POST', headers: adminJson,
+    body: JSON.stringify({
+      name: `No Link ${stamp}`,
+      permissions: [
+        { key: 'employees.view', scope: 'OWN_DEPARTMENT' },
+        { key: 'leave.view', scope: 'OWN_DEPARTMENT' },
+        { key: 'overtime.view', scope: 'OWN_DEPARTMENT' },
+        { key: 'attendance.view', scope: 'OWN_DEPARTMENT' },
+      ],
+    }),
+  })).json()) as AdminRole;
+  // Deliberately NOT passing an employeeId — this login has no linked Employee.
+  const { token: noLinkToken } = await loginAsRole(noLinkRole.id, 'nolink', orgAId);
+  const noLinkAuth = { Authorization: `Bearer ${noLinkToken}` };
+
+  const nlEmpRes = (await (await fetch(`${BASE}/employees`, { headers: noLinkAuth })).json()) as { data: unknown[]; total: number };
+  check('no linked employee + OWN_DEPARTMENT: employees list is EMPTY, not the full directory (fail closed)', Array.isArray(nlEmpRes.data) && nlEmpRes.data.length === 0 && nlEmpRes.total === 0, JSON.stringify(nlEmpRes));
+
+  const nlLeaveRes = (await (await fetch(`${BASE}/leave-requests`, { headers: noLinkAuth })).json()) as unknown[];
+  check('no linked employee + OWN_DEPARTMENT: leave list is EMPTY (fail closed)', Array.isArray(nlLeaveRes) && nlLeaveRes.length === 0, JSON.stringify(nlLeaveRes));
+
+  const nlOtRes = (await (await fetch(`${BASE}/overtime`, { headers: noLinkAuth })).json()) as unknown[];
+  check('no linked employee + OWN_DEPARTMENT: overtime list is EMPTY (fail closed)', Array.isArray(nlOtRes) && nlOtRes.length === 0, JSON.stringify(nlOtRes));
+
+  const nlAttRes = (await (await fetch(`${BASE}/attendance`, { headers: noLinkAuth })).json()) as unknown[];
+  check('no linked employee + OWN_DEPARTMENT: attendance list is EMPTY (fail closed)', Array.isArray(nlAttRes) && nlAttRes.length === 0, JSON.stringify(nlAttRes));
+
+  // ══════════════════════════════════════════════════════════════════════
+  // (l) Two-org isolation, both directions, including the newly scoped endpoints
   // ══════════════════════════════════════════════════════════════════════
   const orgZ = await base.organization.create({ data: { name: `__permissions_probe_${stamp}__` } });
-  const roleZAdmin = await base.role.create({ data: { organizationId: orgZ.id, name: 'Admin', permissions: ['employees.write', 'pii.view', 'users.manage', 'employees.anonymize', 'org_structure.manage', 'leave.manage', 'shifts.manage', 'attendance.manage', 'compliance.manage', 'settings.manage', 'statutory_rates.manage', 'payroll.run', 'payroll.finalize', 'payroll.manage'] } });
+  const roleZAdmin = await base.role.create({
+    data: { organizationId: orgZ.id, name: 'Admin', permissions: PERMISSION_KEYS.map((key) => ({ key, scope: 'ALL' })) },
+  });
   const orgZAdminEmail = `perm.z.admin.${stamp}@example.com`;
   const orgZAdminPassword = 'OrgZAdmin123!';
   const orgZAdminUser = await base.user.create({
@@ -310,23 +656,34 @@ async function main(): Promise<void> {
     check('org Z can create its own department', !!deptZ.id, JSON.stringify(deptZ));
 
     const orgADeptList = (await (await fetch(`${BASE}/departments`, { headers: adminAuth })).json()) as AdminDepartment[];
-    check('org A\'s department list does not include org Z\'s department', !orgADeptList.some((d) => d.id === deptZ.id), JSON.stringify(orgADeptList.map((d) => d.id)));
+    check("org A's department list does not include org Z's department", !orgADeptList.some((d) => d.id === deptZ.id), JSON.stringify(orgADeptList.map((d) => d.id)));
     const orgAFetchZDept = await fetch(`${BASE}/departments/${deptZ.id}`, { headers: adminAuth });
-    check('org A fetching org Z\'s department by id gets 404', orgAFetchZDept.status === 404, String(orgAFetchZDept.status));
+    check("org A fetching org Z's department by id gets 404", orgAFetchZDept.status === 404, String(orgAFetchZDept.status));
 
     const orgZDeptList = (await (await fetch(`${BASE}/departments`, { headers: zAdminAuth })).json()) as AdminDepartment[];
-    check('org Z\'s department list does not include org A\'s parent department', !orgZDeptList.some((d) => d.id === parentDept.id), JSON.stringify(orgZDeptList.map((d) => d.id)));
+    check("org Z's department list does not include org A's department", !orgZDeptList.some((d) => d.id === parentDept.id), JSON.stringify(orgZDeptList.map((d) => d.id)));
     const orgZFetchADept = await fetch(`${BASE}/departments/${parentDept.id}`, { headers: zAdminAuth });
-    check('org Z fetching org A\'s department by id gets 404', orgZFetchADept.status === 404, String(orgZFetchADept.status));
+    check("org Z fetching org A's department by id gets 404", orgZFetchADept.status === 404, String(orgZFetchADept.status));
 
     const roleZ = (await (await fetch(`${BASE}/roles`, {
       method: 'POST', headers: zAdminJson, body: JSON.stringify({ name: `Payroll Clerk ${stamp}`, permissions: [] }),
     })).json()) as AdminRole;
     const orgARolesList = (await (await fetch(`${BASE}/roles`, { headers: adminAuth })).json()) as AdminRole[];
-    check('org A\'s role list does not include org Z\'s same-named custom role', !orgARolesList.some((r) => r.id === roleZ.id), JSON.stringify(orgARolesList.map((r) => r.id)));
+    check("org A's role list does not include org Z's same-named custom role", !orgARolesList.some((r) => r.id === roleZ.id), JSON.stringify(orgARolesList.map((r) => r.id)));
     const orgZRolesList = (await (await fetch(`${BASE}/roles`, { headers: zAdminAuth })).json()) as AdminRole[];
-    check('org Z\'s role list does not include org A\'s custom role', !orgZRolesList.some((r) => r.id === clerkRole.id), JSON.stringify(orgZRolesList.map((r) => r.id)));
+    check("org Z's role list does not include org A's custom role", !orgZRolesList.some((r) => r.id === clerkRole.id), JSON.stringify(orgZRolesList.map((r) => r.id)));
+
+    // Row-level isolation for the newly scoped endpoints too: org Z's Admin
+    // (scope ALL) must never see org A's rows either — org boundary always
+    // wins over scope, which only narrows WITHIN one org.
+    const zLeaveList = (await (await fetch(`${BASE}/leave-requests`, { headers: zAdminAuth })).json()) as Array<{ id: string }>;
+    check("org Z's leave list does not include org A's leave requests", !zLeaveList.some((r) => r.id === leaveReqOwn.id || r.id === leaveReqOther.id), JSON.stringify(zLeaveList.map((r) => r.id)));
+    const zOtList = (await (await fetch(`${BASE}/overtime`, { headers: zAdminAuth })).json()) as Array<{ id: string }>;
+    check("org Z's overtime list does not include org A's overtime entries", !zOtList.some((e) => e.id === otOwn.id || e.id === otOther.id), JSON.stringify(zOtList.map((e) => e.id)));
   } finally {
+    await base.leaveRequest.deleteMany({ where: { organizationId: orgAId, id: { in: [leaveReqOwn.id, leaveReqOther.id] } } }).catch(() => undefined);
+    await base.overtimeEntry.deleteMany({ where: { organizationId: orgAId, id: { in: [otOwn.id, otOther.id] } } }).catch(() => undefined);
+    await base.attendanceRecord.deleteMany({ where: { organizationId: orgAId, id: { in: [attOwn.id, attOther.id] } } }).catch(() => undefined);
     await base.department.deleteMany({ where: { organizationId: orgZ.id } }).catch(() => undefined);
     await base.role.deleteMany({ where: { organizationId: orgZ.id, name: { not: 'Admin' } } }).catch(() => undefined);
     await base.session.deleteMany({ where: { userId: orgZAdminUser.id } }).catch(() => undefined);
