@@ -1,33 +1,32 @@
 /**
- * Prove the three endpoints added for the compliance/documents/attendance
- * frontend surfacing work (feat/surface-hidden-modules) end-to-end over HTTP:
+ * Prove what feat/surface-hidden-modules actually still owns end-to-end over
+ * HTTP, now that it's rebased onto develop (T1 shifts, T2 shift-aware
+ * attendance, T3 device-push, and the org-scoping hotfix all landed first):
  *
  *   - GET /me/documents, GET /me/documents/:id/download — an employee sees
  *     and can download only their own uploaded documents.
- *   - GET /me/attendance — an employee sees only their own attendance.
  *   - GET /attendance with employeeId OMITTED — an org-wide day register,
- *     optionally narrowed by the new departmentId filter.
+ *     narrowed by departmentId. (Self-service /me/attendance itself is now
+ *     fully covered by T2's verify-attendance-ui.ts — dropped here to avoid
+ *     duplicate coverage of the same code path.)
+ *   - Compliance CRUD (consent, data-subject requests, retention policies,
+ *     breach incidents) — previously reachable only from Swagger, never
+ *     proven end-to-end by any verify script until this branch gave it a
+ *     frontend. Includes the SLA/ODPC-clock fields the UI reads.
+ *   - Cross-tenant isolation for all of the above, applying the org-scoping
+ *     hotfix's own test philosophy (both directions, not just "B can't see
+ *     A" but "A is still correct after B exists").
  *
  *   cd apps/api && npx ts-node scripts/verify-hidden-modules.ts
  *
  * Requires the API running (BASE_URL, default http://localhost:3000/api).
- * Everything created here lives in the seeded org (not a throwaway second
- * org — unlike verify-self-service.ts, nothing here needs cross-tenant
- * proof, since the org-wide register and self-service resolution both reuse
- * query paths already generically covered by verify-tenant-scope.ts and
- * verify-self-service.ts). Full cleanup at the end: none of the rows this
- * script creates (Employee, User, Session, Department, AttendanceRecord,
- * EmployeeDocument) sit behind audit_logs' append-only trigger the way
- * Organization does, so — unlike those two scripts — there is nothing this
- * one has to leave behind.
  */
 import 'dotenv/config';
 import { createPrismaClient, baseClientOf } from '../src/prisma/prisma.service';
+import { PasswordService } from '../src/auth/password.service';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3000/api';
 const ATT_DATE = '2097-06-15';
-const ATT_FROM = '2097-06-01';
-const ATT_TO = '2097-06-30';
 
 let pass = 0;
 let fail = 0;
@@ -37,8 +36,11 @@ function check(label: string, ok: boolean, detail = ''): void {
 }
 
 interface MyDocument { id: string; employeeId: string; filename: string }
-interface MyAttendanceRecord { id: string; employeeId: string; date: string; status: string }
 interface AttendanceRow { id: string; employeeId: string; date: string; status: string }
+interface Consent { id: string; purpose: string; lawfulBasis: string; active: boolean }
+interface Dsr { id: string; requestType: string; status: string; overdue: boolean; daysUntilDue: number }
+interface RetentionPolicy { id: string; recordType: string; retentionPeriodMonths: number }
+interface Breach { id: string; description: string; status: string; odpc: { deadline: string; status: string; hoursRemaining: number } }
 
 async function main(): Promise<void> {
   const stamp = Date.now();
@@ -77,9 +79,9 @@ async function main(): Promise<void> {
   const adminJson = { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' };
   const adminAuth = { Authorization: `Bearer ${adminToken}` };
 
-  async function makeEmployee(tag: string): Promise<string> {
+  async function makeEmployee(tag: string, jsonHeaders: Record<string, string>): Promise<string> {
     const r = await fetch(`${BASE}/employees`, {
-      method: 'POST', headers: adminJson,
+      method: 'POST', headers: jsonHeaders,
       body: JSON.stringify({
         employeeNumber: `HM-${tag}-${stamp}`, firstName: 'HiddenModules', lastName: tag,
         nationalId: nationalId(), employmentType: 'PERMANENT', hireDate: '2020-01-01',
@@ -90,8 +92,8 @@ async function main(): Promise<void> {
     return id;
   }
 
-  const empA = await makeEmployee('A');
-  const empB = await makeEmployee('B');
+  const empA = await makeEmployee('A', adminJson);
+  const empB = await makeEmployee('B', adminJson);
   const tokenA = await provisionEmployeeLogin(empA, `hm.a.${stamp}@example.com`, adminJson);
   const tokenB = await provisionEmployeeLogin(empB, `hm.b.${stamp}@example.com`, adminJson);
   const authA = { Authorization: `Bearer ${tokenA}` };
@@ -133,7 +135,7 @@ async function main(): Promise<void> {
   const downloadCross = await fetch(`${BASE}/me/documents/${uploaded.id}/download`, { headers: authB });
   check('B downloading A\'s document is refused (404, not the file)', downloadCross.status === 404, `got ${downloadCross.status}`);
 
-  // ── (b) attendance self-service ──
+  // ── (b) HR org-wide day register (employeeId omitted) + departmentId filter ──
   await fetch(`${BASE}/attendance`, {
     method: 'POST', headers: adminJson,
     body: JSON.stringify({ employeeId: empA, date: ATT_DATE, clockIn: `${ATT_DATE}T08:00:00.000Z`, status: 'PRESENT' }),
@@ -143,22 +145,11 @@ async function main(): Promise<void> {
     body: JSON.stringify({ employeeId: empB, date: ATT_DATE, status: 'LATE' }),
   });
 
-  const attA = (await (await fetch(`${BASE}/me/attendance?from=${ATT_FROM}&to=${ATT_TO}`, { headers: authA })).json()) as MyAttendanceRecord[];
-  check('A\'s /me/attendance includes A\'s own record for the test date',
-    attA.some((r) => r.date.slice(0, 10) === ATT_DATE && r.status === 'PRESENT'), JSON.stringify(attA));
-  check('A\'s /me/attendance contains only A\'s own employeeId',
-    attA.every((r) => r.employeeId === empA), JSON.stringify(attA));
-
-  const attB = (await (await fetch(`${BASE}/me/attendance?from=${ATT_FROM}&to=${ATT_TO}`, { headers: authB })).json()) as MyAttendanceRecord[];
-  check('B\'s /me/attendance does NOT include A\'s record',
-    !attB.some((r) => r.date.slice(0, 10) === ATT_DATE && r.status === 'PRESENT'), JSON.stringify(attB));
-
-  // ── (c) HR org-wide day register (employeeId omitted) ──
   const registerAll = (await (await fetch(
     `${BASE}/attendance?from=${ATT_DATE}&to=${ATT_DATE}`, { headers: adminAuth },
   )).json()) as AttendanceRow[];
-  check('Org-wide register (no employeeId) includes A', registerAll.some((r) => r.employeeId === empA), JSON.stringify(registerAll));
-  check('Org-wide register (no employeeId) includes B', registerAll.some((r) => r.employeeId === empB), JSON.stringify(registerAll));
+  check('org-wide register (no employeeId) includes A', registerAll.some((r) => r.employeeId === empA), JSON.stringify(registerAll));
+  check('org-wide register (no employeeId) includes B', registerAll.some((r) => r.employeeId === empB), JSON.stringify(registerAll));
 
   const registerDept = (await (await fetch(
     `${BASE}/attendance?from=${ATT_DATE}&to=${ATT_DATE}&departmentId=${deptId}`, { headers: adminAuth },
@@ -171,25 +162,152 @@ async function main(): Promise<void> {
   )).json()) as AttendanceRow[];
   check('departmentId filter with an unmatched department returns neither', registerOtherDept.length === 0, JSON.stringify(registerOtherDept));
 
-  // ── cleanup — everything here can be fully removed (see file header) ──
+  // ── (c) compliance CRUD — never proven end-to-end before this branch gave it a UI ──
+
+  // consent
+  const consentRes = await fetch(`${BASE}/employees/${empA}/consents`, {
+    method: 'POST', headers: adminJson,
+    body: JSON.stringify({ purpose: `Payroll processing ${stamp}`, lawfulBasis: 'CONTRACT' }),
+  });
+  const consent = (await consentRes.json()) as Consent;
+  check('consent grant succeeds and is active', consent.active === true, JSON.stringify(consent));
+  const consentsA = (await (await fetch(`${BASE}/employees/${empA}/consents`, { headers: adminAuth })).json()) as Consent[];
+  check('consent list for A includes the new grant', consentsA.some((c) => c.id === consent.id), JSON.stringify(consentsA));
+  const withdrawRes = await fetch(`${BASE}/consents/${consent.id}/withdraw`, { method: 'POST', headers: adminAuth });
+  const withdrawn = (await withdrawRes.json()) as Consent;
+  check('consent withdraw flips active to false', withdrawn.active === false, JSON.stringify(withdrawn));
+
+  // data-subject requests (SLA fields)
+  const dsrRes = await fetch(`${BASE}/employees/${empA}/data-subject-requests`, {
+    method: 'POST', headers: adminJson,
+    body: JSON.stringify({ requestType: 'ACCESS', notes: `Verify probe ${stamp}` }),
+  });
+  const dsr = (await dsrRes.json()) as Dsr;
+  check('DSR create returns SLA fields (not overdue, daysUntilDue > 0 for a fresh request)',
+    dsr.overdue === false && dsr.daysUntilDue > 0, JSON.stringify(dsr));
+  const dsrList = (await (await fetch(`${BASE}/data-subject-requests?status=RECEIVED`, { headers: adminAuth })).json()) as Dsr[];
+  check('DSR list filtered by status=RECEIVED includes the new request', dsrList.some((d) => d.id === dsr.id), JSON.stringify(dsrList));
+  const dsrTransition = await fetch(`${BASE}/data-subject-requests/${dsr.id}`, {
+    method: 'PATCH', headers: adminJson, body: JSON.stringify({ status: 'COMPLETED', notes: 'Resolved by verify script' }),
+  });
+  const dsrDone = (await dsrTransition.json()) as Dsr;
+  check('DSR transitions to COMPLETED', dsrDone.status === 'COMPLETED', JSON.stringify(dsrDone));
+
+  // retention policies (upsert: create then update the SAME recordType)
+  const recordType = `VerifyProbe-${stamp}`;
+  const policyCreate = await fetch(`${BASE}/retention-policies`, {
+    method: 'PUT', headers: adminJson,
+    body: JSON.stringify({ recordType, retentionPeriodMonths: 12 }),
+  });
+  const policy = (await policyCreate.json()) as RetentionPolicy;
+  check('retention policy upsert creates a new policy', policy.retentionPeriodMonths === 12, JSON.stringify(policy));
+  const policyUpdate = await fetch(`${BASE}/retention-policies`, {
+    method: 'PUT', headers: adminJson,
+    body: JSON.stringify({ recordType, retentionPeriodMonths: 24, legalBasisNote: 'Extended for audit' }),
+  });
+  const policyUpdated = (await policyUpdate.json()) as RetentionPolicy;
+  check('retention policy upsert for the SAME recordType updates in place, not duplicates',
+    policyUpdated.id === policy.id && policyUpdated.retentionPeriodMonths === 24, JSON.stringify(policyUpdated));
+  const policyList = (await (await fetch(`${BASE}/retention-policies`, { headers: adminAuth })).json()) as RetentionPolicy[];
+  check('retention policy list contains exactly one row for this recordType (upsert, not duplicate rows)',
+    policyList.filter((p) => p.recordType === recordType).length === 1, JSON.stringify(policyList.filter((p) => p.recordType === recordType)));
+  const policyDelete = await fetch(`${BASE}/retention-policies/${policy.id}`, { method: 'DELETE', headers: adminAuth });
+  check('retention policy delete succeeds', policyDelete.status === 200, `got ${policyDelete.status}`);
+
+  // breach incidents (ODPC 72h clock)
+  const breachRes = await fetch(`${BASE}/breach-incidents`, {
+    method: 'POST', headers: adminJson,
+    body: JSON.stringify({ detectedAt: new Date().toISOString(), description: `Verify probe breach ${stamp}`, affectedEmployeeCount: 3 }),
+  });
+  const breach = (await breachRes.json()) as Breach;
+  check('breach create returns an ODPC clock with hoursRemaining close to 72',
+    breach.odpc.hoursRemaining > 71 && breach.odpc.hoursRemaining <= 72, JSON.stringify(breach.odpc));
+  const breachList = (await (await fetch(`${BASE}/breach-incidents?status=OPEN`, { headers: adminAuth })).json()) as Breach[];
+  check('breach list filtered by status=OPEN includes the new incident', breachList.some((b) => b.id === breach.id), JSON.stringify(breachList.map((b) => b.id)));
+  const breachUpdate = await fetch(`${BASE}/breach-incidents/${breach.id}`, {
+    method: 'PATCH', headers: adminJson, body: JSON.stringify({ status: 'CONTAINED' }),
+  });
+  const breachUpdated = (await breachUpdate.json()) as Breach;
+  check('breach transitions to CONTAINED', breachUpdated.status === 'CONTAINED', JSON.stringify(breachUpdated));
+
+  // ── (d) cross-tenant isolation (throwaway org Z), both directions — the hotfix's own test philosophy ──
   const prisma = createPrismaClient();
   const base = baseClientOf(prisma) as any;
+  const orgZ = await base.organization.create({ data: { name: `__hidden_modules_probe_${stamp}__` } });
+  const roleZ = await base.role.create({ data: { organizationId: orgZ.id, name: 'Admin', permissions: { all: true } } });
+  const passwords = new PasswordService();
+  const orgZAdminEmail = `hm.z.admin.${stamp}@example.com`;
+  const orgZAdminPassword = 'OrgZAdmin123!';
+  const orgZAdminUser = await base.user.create({
+    data: {
+      organizationId: orgZ.id, email: orgZAdminEmail,
+      passwordHash: await passwords.hash(orgZAdminPassword),
+      mustChangePassword: false, roleId: roleZ.id,
+    },
+  });
+
   try {
-    const users = await base.user.findMany({
+    const tokenZ = await login(orgZAdminEmail, orgZAdminPassword);
+    const zJson = { Authorization: `Bearer ${tokenZ}`, 'Content-Type': 'application/json' };
+    const zAuth = { Authorization: `Bearer ${tokenZ}` };
+
+    const empZ = await makeEmployee('Z', zJson);
+    // assertEmployee() 404s before the consent query ever runs — org A's
+    // employeeId simply doesn't resolve under org Z's tenant-scoped read.
+    const consentsZForARes = await fetch(`${BASE}/employees/${empA}/consents`, { headers: zAuth });
+    check('org Z requesting org A\'s employee consents (by guessed id) gets 404, not the data',
+      consentsZForARes.status === 404, `got ${consentsZForARes.status}`);
+
+    const dsrZList = (await (await fetch(`${BASE}/data-subject-requests`, { headers: zAuth })).json()) as Dsr[];
+    check('org Z\'s DSR list does not include org A\'s request', !dsrZList.some((d) => d.id === dsr.id), JSON.stringify(dsrZList.map((d) => d.id)));
+
+    const retentionZList = (await (await fetch(`${BASE}/retention-policies`, { headers: zAuth })).json()) as RetentionPolicy[];
+    check('org Z\'s retention policy list does not include org A\'s recordType', !retentionZList.some((p) => p.recordType === recordType), JSON.stringify(retentionZList));
+
+    const breachZList = (await (await fetch(`${BASE}/breach-incidents`, { headers: zAuth })).json()) as Breach[];
+    check('org Z\'s breach list does not include org A\'s incident', !breachZList.some((b) => b.id === breach.id), JSON.stringify(breachZList.map((b) => b.id)));
+
+    const registerZ = (await (await fetch(`${BASE}/attendance?from=${ATT_DATE}&to=${ATT_DATE}`, { headers: zAuth })).json()) as AttendanceRow[];
+    check('org Z\'s org-wide register does not include org A/B\'s attendance', !registerZ.some((r) => r.employeeId === empA || r.employeeId === empB), JSON.stringify(registerZ));
+
+    // Bidirectional: org A's own compliance data is unaffected by org Z existing.
+    const breachListAfter = (await (await fetch(`${BASE}/breach-incidents?status=CONTAINED`, { headers: adminAuth })).json()) as Breach[];
+    check('org A\'s breach list still resolves correctly after org Z was created', breachListAfter.some((b) => b.id === breach.id), JSON.stringify(breachListAfter.map((b) => b.id)));
+
+    await base.employee.deleteMany({ where: { id: empZ } }).catch(() => undefined);
+  } finally {
+    // Organization itself is never deleted once real auth activity (a
+    // login, here) has touched it — see verify-self-service.ts /
+    // verify-leave-requests.ts for the same rationale.
+    await base.session.deleteMany({ where: { userId: orgZAdminUser.id } }).catch(() => undefined);
+    await base.user.deleteMany({ where: { organizationId: orgZ.id } }).catch(() => undefined);
+    await base.role.deleteMany({ where: { organizationId: orgZ.id } }).catch(() => undefined);
+    await (prisma as any).$disconnect?.();
+  }
+
+  // ── cleanup — org A/B rows are fully removable (nothing here sits behind
+  // an append-only trigger the way Organization/audit_logs do) ──
+  const prisma2 = createPrismaClient();
+  const base2 = baseClientOf(prisma2) as any;
+  try {
+    const users = await base2.user.findMany({
       where: { email: { in: [`hm.a.${stamp}@example.com`, `hm.b.${stamp}@example.com`] } },
       select: { id: true },
     });
     const userIds = users.map((u: { id: string }) => u.id);
-    await base.session.deleteMany({ where: { userId: { in: userIds } } });
-    await base.attendanceRecord.deleteMany({ where: { employeeId: { in: [empA, empB] } } });
-    await base.employeeDocument.deleteMany({ where: { employeeId: { in: [empA, empB] } } });
-    await base.user.deleteMany({ where: { id: { in: userIds } } });
-    await base.employee.deleteMany({ where: { id: { in: [empA, empB] } } });
-    await base.department.deleteMany({ where: { id: deptId } });
+    await base2.session.deleteMany({ where: { userId: { in: userIds } } });
+    await base2.breachIncident.deleteMany({ where: { id: breach.id } });
+    await base2.dataSubjectRequest.deleteMany({ where: { id: dsr.id } });
+    await base2.consentRecord.deleteMany({ where: { employeeId: { in: [empA, empB] } } });
+    await base2.attendanceRecord.deleteMany({ where: { employeeId: { in: [empA, empB] } } });
+    await base2.employeeDocument.deleteMany({ where: { employeeId: { in: [empA, empB] } } });
+    await base2.user.deleteMany({ where: { id: { in: userIds } } });
+    await base2.employee.deleteMany({ where: { id: { in: [empA, empB] } } });
+    await base2.department.deleteMany({ where: { id: deptId } });
   } catch (e) {
     console.log(`  (cleanup warning, non-fatal: ${(e as Error).message})`);
   } finally {
-    await (prisma as any).$disconnect?.();
+    await (prisma2 as any).$disconnect?.();
   }
 
   console.log(`\n  ${pass} passed, ${fail} failed`);
