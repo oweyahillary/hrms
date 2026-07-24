@@ -213,6 +213,10 @@ jobs:
           npx ts-node scripts/verify-shifts.ts
           echo "::endgroup::"
 
+          echo "::group::verify attendance-ui"
+          npx ts-node scripts/verify-attendance-ui.ts
+          echo "::endgroup::"
+
       - name: API logs on failure
         if: failure()
         run: cat /tmp/api.log || true

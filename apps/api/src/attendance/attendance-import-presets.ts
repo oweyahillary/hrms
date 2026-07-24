@@ -47,6 +47,22 @@ function pick(row: RawCsvRow, keys: string[]): string | undefined {
   return undefined;
 }
 
+/**
+ * Parses a ZK punch timestamp as UTC, explicitly. A bare "YYYY-MM-DD
+ * HH:MM:SS" (the common ZKTeco export shape) has no timezone of its own —
+ * left to `new Date(...)`, a non-ISO string like this is parsed in the
+ * LOCAL TIMEZONE OF WHATEVER MACHINE RUNS THE CODE, not UTC. That's a real
+ * bug this had (caught in verification: a sandbox running UTC+3 imported
+ * every punch three hours off). Matching this codebase's UTC-everywhere
+ * convention here, not the host machine's clock, is the only import that
+ * behaves the same in dev, CI and production regardless of server timezone.
+ */
+function parseZkTimestamp(raw: string): Date {
+  const spaceForm = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})$/.exec(raw);
+  if (spaceForm) return new Date(`${spaceForm[1]}T${spaceForm[2]}.000Z`);
+  return new Date(raw); // already has an explicit offset/Z, or is some other format — let it parse (or fail) as-is
+}
+
 export function neutralPreset(rows: RawCsvRow[]): SourcedRow[] {
   return rows.map((r, i) => ({
     sourceRow: i + 2, // +2: header is row 1
@@ -92,7 +108,7 @@ export function extractZkPunches(rows: RawCsvRow[]): { punches: Punch[]; errors:
       errors.push({ row: rowNumber, message: 'missing employee id or punch time' });
       return;
     }
-    const ts = new Date(timeStr);
+    const ts = parseZkTimestamp(timeStr);
     if (Number.isNaN(ts.getTime())) {
       errors.push({ row: rowNumber, message: `unreadable punch time "${timeStr}"` });
       return;
