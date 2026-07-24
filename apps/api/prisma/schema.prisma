@@ -254,6 +254,10 @@ model Organization {
   // later never retroactively changes an already-persisted calculation.
   severanceDayRateBasis SeveranceDayRateBasis @default(CALENDAR_30)
 
+  /// Minutes of grace after a shift's scheduled start before a clock-in is
+  /// LATE rather than PRESENT — see attendance/derive-status.ts.
+  lateGraceMinutes Int @default(15)
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt // [T2]
 

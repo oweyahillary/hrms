@@ -6,6 +6,7 @@ import type { UpdateBrandingDto } from './dto/update-branding.dto';
 import type { UpdateNumberingDto } from './dto/update-numbering.dto';
 import type { UpdateLeaveApprovalDto } from './dto/update-leave-approval.dto';
 import type { UpdatePayrollSettingsDto } from './dto/update-payroll-settings.dto';
+import type { UpdateAttendanceSettingsDto } from './dto/update-attendance-settings.dto';
 import { formatEmployeeNumber } from '../employees/employee-number';
 import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
 
@@ -178,6 +179,22 @@ export class OrganizationService {
     if (dto.severanceDayRateBasis !== undefined) data.severanceDayRateBasis = dto.severanceDayRateBasis;
     await this.prisma.organization.update({ where: { id: orgId }, data });
     return this.getPayrollSettings(orgId);
+  }
+
+  async getAttendanceSettings(orgId: string) {
+    const org = (await this.prisma.organization.findFirst({
+      where: { id: orgId },
+      select: { lateGraceMinutes: true },
+    })) as unknown as { lateGraceMinutes: number } | null;
+    if (!org) throw new NotFoundException('Organization not found');
+    return { lateGraceMinutes: org.lateGraceMinutes };
+  }
+
+  async updateAttendanceSettings(orgId: string, dto: UpdateAttendanceSettingsDto) {
+    const data: Record<string, unknown> = {};
+    if (dto.lateGraceMinutes !== undefined) data.lateGraceMinutes = dto.lateGraceMinutes;
+    await this.prisma.organization.update({ where: { id: orgId }, data });
+    return this.getAttendanceSettings(orgId);
   }
 
   async getBranding(orgId: string) {

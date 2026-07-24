@@ -56,9 +56,3 @@ export function parseAttendanceRow(raw: RawAttendanceRow, rowNumber: number): { 
 
   return { record: { employeeNumber, date, clockIn, clockOut, status } };
 }
-
-/** Explicit status wins; otherwise infer from whether the person clocked in. */
-export function deriveStatus(explicit: string | null, clockIn: string | null): string {
-  if (explicit) return explicit;
-  return clockIn ? 'PRESENT' : 'ABSENT';
-}

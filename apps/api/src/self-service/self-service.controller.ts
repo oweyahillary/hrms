@@ -44,4 +44,9 @@ export class SelfServiceController {
   shifts(@CurrentUser() user: AuthUser, @Query('from') from: string, @Query('to') to: string) {
     return this.selfService.getShifts(user.userId, from, to);
   }
+
+  @Get('attendance')
+  attendance(@CurrentUser() user: AuthUser, @Query('from') from?: string, @Query('to') to?: string) {
+    return this.selfService.getAttendance(user.userId, from, to);
+  }
 }

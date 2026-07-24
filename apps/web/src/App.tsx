@@ -37,6 +37,8 @@ import { MyLeavePage } from './pages/MyLeavePage';
 import { MyProfilePage } from './pages/MyProfilePage';
 import { ShiftsPage } from './pages/ShiftsPage';
 import { SettingsShiftsPage } from './pages/SettingsShiftsPage';
+import { AttendancePage } from './pages/AttendancePage';
+import { MyAttendancePage } from './pages/MyAttendancePage';
 
 export function App() {
   return (
@@ -61,6 +63,7 @@ export function App() {
                 <Route path="/leave/balances" element={<RequireRole check={canManageEmployees}><LeaveBalancesPage /></RequireRole>} />
                 <Route path="/leave/types" element={<RequireRole check={canManageEmployees}><LeaveTypesPage /></RequireRole>} />
                 <Route path="/shifts" element={<RequireRole check={canManageEmployees}><ShiftsPage /></RequireRole>} />
+                <Route path="/attendance" element={<RequireRole check={canManageEmployees}><AttendancePage /></RequireRole>} />
                 <Route path="/payroll" element={<RequireRole check={canManageEmployees}><PayrollLayout /></RequireRole>}>
                   <Route index element={<PayrollRunsPage />} />
                   <Route path="new" element={<PayrollRunCreatePage />} />
@@ -83,6 +86,7 @@ export function App() {
                 <Route path="/me/payslips" element={<MyPayslipsPage />} />
                 <Route path="/me/leave" element={<MyLeavePage />} />
                 <Route path="/me/profile" element={<MyProfilePage />} />
+                <Route path="/me/attendance" element={<MyAttendancePage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </AppShellLayout>

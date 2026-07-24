@@ -10,6 +10,7 @@ import { UpdateBrandingDto } from './dto/update-branding.dto';
 import { UpdateNumberingDto } from './dto/update-numbering.dto';
 import { UpdateLeaveApprovalDto } from './dto/update-leave-approval.dto';
 import { UpdatePayrollSettingsDto } from './dto/update-payroll-settings.dto';
+import { UpdateAttendanceSettingsDto } from './dto/update-attendance-settings.dto';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.decorator';
@@ -81,6 +82,16 @@ export class OrganizationController {
   @Patch('payroll-settings') @Roles(...HR_MANAGEMENT_ROLES)
   updatePayrollSettings(@CurrentUser() user: AuthUser, @Body() dto: UpdatePayrollSettingsDto) {
     return this.org.updatePayrollSettings(user.organizationId, dto);
+  }
+
+  @Get('attendance-settings') @Roles(...HR_MANAGEMENT_ROLES)
+  getAttendanceSettings(@CurrentUser() user: AuthUser) {
+    return this.org.getAttendanceSettings(user.organizationId);
+  }
+
+  @Patch('attendance-settings') @Roles(...HR_MANAGEMENT_ROLES)
+  updateAttendanceSettings(@CurrentUser() user: AuthUser, @Body() dto: UpdateAttendanceSettingsDto) {
+    return this.org.updateAttendanceSettings(user.organizationId, dto);
   }
 
   @Post('logo') @Roles(...HR_MANAGEMENT_ROLES)
