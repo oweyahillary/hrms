@@ -293,18 +293,25 @@ async function main(): Promise<void> {
   const employeeAuth = { Authorization: `Bearer ${employeeToken}` };
   const employeeJson = { Authorization: `Bearer ${employeeToken}`, 'Content-Type': 'application/json' };
 
+  // HR Manager/HR Officer/Employee: unchanged, byte-for-byte against the
+  // source of truth every backfill run uses. Manager is DELIBERATELY
+  // different now (see ROLE_PERMISSION_DEFAULTS.Manager) — checked here too,
+  // still against the same source of truth, just no longer an "unchanged" claim.
+  let managerUserId = '';
   for (const [label, auth] of [
     ['HR Manager', hrMgrAuth], ['HR Officer', hrOfficerAuth], ['Manager', managerAuth], ['Employee', employeeAuth],
   ] as const) {
-    const me = (await (await fetch(`${BASE}/auth/me`, { headers: auth })).json()) as { permissions?: GrantedPermission[] };
+    const me = (await (await fetch(`${BASE}/auth/me`, { headers: auth })).json()) as { id: string; permissions?: GrantedPermission[] };
+    if (label === 'Manager') managerUserId = me.id;
     const expected = sortedPerms([...(ROLE_PERMISSION_DEFAULTS[label] ?? [])]);
     const actual = sortedPerms(me.permissions ?? []);
     check(
-      `${label}'s stored permission set exactly matches ROLE_PERMISSION_DEFAULTS (full 25-key matrix unchanged)`,
+      `${label}'s stored permission set exactly matches ROLE_PERMISSION_DEFAULTS`,
       JSON.stringify(actual) === JSON.stringify(expected),
       JSON.stringify({ expected, actual }),
     );
   }
+  check('captured the Manager login\'s own userId for the approver-chain test below', managerUserId.length > 0, managerUserId);
 
   // HR Manager / HR Officer: full HR access except the three still Admin-only.
   for (const [label, auth, json] of [
@@ -342,22 +349,30 @@ async function main(): Promise<void> {
     check(`${label} CANNOT anonymize employees (employees.anonymize is Admin-only, unchanged)`, anonymizeRes.status === 403, String(anonymizeRes.status));
   }
 
-  // Manager: the naming discrepancy this migration (and the one before it)
-  // deliberately preserved — zero elevated access, identical to Employee.
+  // Manager: DELIBERATELY no longer empty (see ROLE_PERMISSION_DEFAULTS.Manager
+  // and item-1 of the follow-up review) — holds DEPARTMENT_SUPERVISOR_SET, all
+  // OWN_DEPARTMENT. org_structure.manage and employees.write were never part
+  // of that set, so those two stay refused exactly as before.
   const mgrDeptRes = await fetch(`${BASE}/departments`, { method: 'POST', headers: managerJson, body: JSON.stringify({ name: 'Should not be created' }) });
-  check('Manager role CANNOT manage departments (preserves the pre-migration "Manager has no elevated access" behaviour)', mgrDeptRes.status === 403, String(mgrDeptRes.status));
+  check('Manager role still CANNOT manage departments (org_structure.manage not in DEPARTMENT_SUPERVISOR_SET)', mgrDeptRes.status === 403, String(mgrDeptRes.status));
 
+  // managerEmp has no department yet at this point in the script (assigned
+  // in section (m) below) — employees.view is held but OWN_DEPARTMENT-scoped,
+  // so with no resolvable department this must fail CLOSED to an empty page,
+  // not 403 (they DO hold the key now) and not the full directory.
   const mgrEmployeesListRes = await fetch(`${BASE}/employees`, { headers: managerAuth });
+  const mgrEmployeesList = (await mgrEmployeesListRes.json()) as { data: unknown[]; total: number };
   check(
-    'Manager CANNOT reach the employee directory — DELIBERATE EXCEPTION, not a pure refactor: employees.view is a NEW gate (previously any authenticated user could list employees); Manager/Employee lose access that HR-capable roles keep',
-    mgrEmployeesListRes.status === 403, String(mgrEmployeesListRes.status),
+    'Manager NOW reaches the employee directory (employees.view, DELIBERATE behaviour change from item 1) but sees nothing yet — no department link resolved (fail closed)',
+    mgrEmployeesListRes.status === 200 && mgrEmployeesList.data.length === 0 && mgrEmployeesList.total === 0,
+    JSON.stringify({ status: mgrEmployeesListRes.status, body: mgrEmployeesList }),
   );
 
   const mgrCreateRes = await fetch(`${BASE}/employees`, {
     method: 'POST', headers: managerJson,
     body: JSON.stringify({ employeeNumber: `MGRFAIL-${stamp}`, firstName: 'X', lastName: 'Y', nationalId: nationalId(), employmentType: 'PERMANENT', hireDate: '2020-01-01' }),
   });
-  check('Manager CANNOT create employees (employees.write)', mgrCreateRes.status === 403, String(mgrCreateRes.status));
+  check('Manager still CANNOT create employees (employees.write not in DEPARTMENT_SUPERVISOR_SET)', mgrCreateRes.status === 403, String(mgrCreateRes.status));
 
   // Employee: self-service only.
   const empDeptRes = await fetch(`${BASE}/departments`, { method: 'POST', headers: employeeJson, body: JSON.stringify({ name: 'Should not be created' }) });
@@ -474,6 +489,11 @@ async function main(): Promise<void> {
     !!lineSupervisorTpl && lineSupervisorTpl.permissions.length > 0 && lineSupervisorTpl.permissions.every((p) => p.scope === 'OWN_DEPARTMENT'),
     JSON.stringify(lineSupervisorTpl),
   );
+  check(
+    'Line Supervisor template matches the seeded Manager role default EXACTLY (item 1 of the follow-up review)',
+    JSON.stringify(sortedPerms(lineSupervisorTpl?.permissions ?? [])) === JSON.stringify(sortedPerms([...(ROLE_PERMISSION_DEFAULTS.Manager ?? [])])),
+    JSON.stringify({ lineSupervisor: lineSupervisorTpl?.permissions, manager: ROLE_PERMISSION_DEFAULTS.Manager }),
+  );
   const payrollOfficerTpl = templates.find((t) => t.name === 'Payroll Officer');
   check(
     'Payroll Officer template does NOT include payroll.finalize (maker-checker)',
@@ -559,9 +579,14 @@ async function main(): Promise<void> {
 
   const supApproveOtherRes = await fetch(`${BASE}/leave-requests/${leaveReqOther.id}/approve`, { method: 'POST', headers: supervisorAuth });
   check(
-    'Line Supervisor is REFUSED approving the other department\'s request EVEN THOUGH they are the assigned approver — scope is a real, independent gate, not just the route',
-    supApproveOtherRes.status === 403, String(supApproveOtherRes.status),
+    "Line Supervisor is REFUSED approving the other department's request EVEN THOUGH they are the assigned approver — scope is a real, independent gate, not just the route. 404, not 403 — see docs/auth.md's 403-vs-404 rule (out of scope must read as \"doesn't exist\")",
+    supApproveOtherRes.status === 404, String(supApproveOtherRes.status),
   );
+
+  // GET-by-id must be equally uninformative for an out-of-scope request —
+  // not just the write path.
+  const supGetOtherLeaveRes = await fetch(`${BASE}/leave-requests/${leaveReqOther.id}`, { headers: supervisorAuth });
+  check("Line Supervisor fetching the other department's leave request by id gets 404 too (GET, not just the approve write)", supGetOtherLeaveRes.status === 404, String(supGetOtherLeaveRes.status));
 
   // --- overtime: list + get + approve, same identity-vs-scope proof ---
   const otOwn = await base.overtimeEntry.create({
@@ -597,6 +622,66 @@ async function main(): Promise<void> {
   const supAttList = (await supAttListRes.json()) as Array<{ id: string }>;
   check("Line Supervisor attendance list includes their own department's record", supAttList.some((r) => r.id === attOwn.id), JSON.stringify(supAttList.map((r) => r.id)));
   check("Line Supervisor attendance list EXCLUDES the other department's record (row-level)", !supAttList.some((r) => r.id === attOther.id), JSON.stringify(supAttList.map((r) => r.id)));
+
+  // ══════════════════════════════════════════════════════════════════════
+  // (m) Manager (seeded role, not a custom one) — item 1 of the follow-up
+  // review: this is THE scenario that was silently broken. A department
+  // head's login often holds nothing more than the seeded 'Manager' role,
+  // and resolveFor() (leave-requests.service.ts) routes leave approvals to
+  // whoever heads the applicant's department regardless of what role that
+  // head's login holds — so a Manager-role head being unable to approve
+  // their own team was a real, not hypothetical, break the moment
+  // leave.approve/overtime.approve became hard requirements. Proven here
+  // end-to-end: link managerEmp into deptOwn (the same department used for
+  // the Line Supervisor test above), then approve for real.
+  // ══════════════════════════════════════════════════════════════════════
+  await assignDepartment(managerEmp.id, deptOwn.id);
+
+  const mgrLeaveReqOwn = await base.leaveRequest.create({
+    data: {
+      organizationId: orgAId, employeeId: ownDeptWorker.id, leaveTypeId: leaveType.id,
+      startDate: new Date('2099-03-10'), endDate: new Date('2099-03-11'), daysRequested: 2, status: 'PENDING',
+      approvalSteps: { create: [{ stepOrder: 0, approverUserId: managerUserId }] },
+    },
+  });
+  const mgrLeaveReqOther = await base.leaveRequest.create({
+    data: {
+      organizationId: orgAId, employeeId: otherDeptWorker.id, leaveTypeId: leaveType.id,
+      startDate: new Date('2099-03-10'), endDate: new Date('2099-03-11'), daysRequested: 2, status: 'PENDING',
+      approvalSteps: { create: [{ stepOrder: 0, approverUserId: managerUserId }] },
+    },
+  });
+
+  const mgrApproveOwnRes = await fetch(`${BASE}/leave-requests/${mgrLeaveReqOwn.id}/approve`, { method: 'POST', headers: managerAuth });
+  check(
+    "Manager (seeded role) named as approver on THEIR OWN department's leave request completes approve end-to-end — the item-1 blocker, fixed",
+    mgrApproveOwnRes.status === 200 || mgrApproveOwnRes.status === 201, String(mgrApproveOwnRes.status),
+  );
+
+  const mgrApproveOtherRes = await fetch(`${BASE}/leave-requests/${mgrLeaveReqOther.id}/approve`, { method: 'POST', headers: managerAuth });
+  check(
+    "Manager (seeded role) named as approver on ANOTHER department's leave request is still blocked (404) — the fix grants OWN_DEPARTMENT, not ALL",
+    mgrApproveOtherRes.status === 404, String(mgrApproveOtherRes.status),
+  );
+
+  const mgrOtOwn = await base.overtimeEntry.create({
+    data: { organizationId: orgAId, employeeId: ownDeptWorker.id, date: new Date('2099-04-10'), hours: 1.5, category: 'NORMAL_DAY', source: 'MANUAL', status: 'PENDING' },
+  });
+  const mgrOtOther = await base.overtimeEntry.create({
+    data: { organizationId: orgAId, employeeId: otherDeptWorker.id, date: new Date('2099-04-10'), hours: 1.5, category: 'NORMAL_DAY', source: 'MANUAL', status: 'PENDING' },
+  });
+
+  const mgrOtApproveOwnRes = await fetch(`${BASE}/overtime/${mgrOtOwn.id}/approve`, { method: 'POST', headers: managerAuth });
+  check(
+    "Manager (seeded role) CAN approve an overtime entry in their own department (same fix, overtime side)",
+    mgrOtApproveOwnRes.status === 200 || mgrOtApproveOwnRes.status === 201, String(mgrOtApproveOwnRes.status),
+  );
+
+  const mgrOtApproveOtherRes = await fetch(`${BASE}/overtime/${mgrOtOther.id}/approve`, { method: 'POST', headers: managerAuth });
+  check(
+    "Manager (seeded role) is still blocked approving another department's overtime entry (404)",
+    mgrOtApproveOtherRes.status === 404, String(mgrOtApproveOtherRes.status),
+  );
 
   // ══════════════════════════════════════════════════════════════════════
   // (k) Fail CLOSED: OWN_DEPARTMENT scope with no linked employee record
@@ -681,8 +766,8 @@ async function main(): Promise<void> {
     const zOtList = (await (await fetch(`${BASE}/overtime`, { headers: zAdminAuth })).json()) as Array<{ id: string }>;
     check("org Z's overtime list does not include org A's overtime entries", !zOtList.some((e) => e.id === otOwn.id || e.id === otOther.id), JSON.stringify(zOtList.map((e) => e.id)));
   } finally {
-    await base.leaveRequest.deleteMany({ where: { organizationId: orgAId, id: { in: [leaveReqOwn.id, leaveReqOther.id] } } }).catch(() => undefined);
-    await base.overtimeEntry.deleteMany({ where: { organizationId: orgAId, id: { in: [otOwn.id, otOther.id] } } }).catch(() => undefined);
+    await base.leaveRequest.deleteMany({ where: { organizationId: orgAId, id: { in: [leaveReqOwn.id, leaveReqOther.id, mgrLeaveReqOwn.id, mgrLeaveReqOther.id] } } }).catch(() => undefined);
+    await base.overtimeEntry.deleteMany({ where: { organizationId: orgAId, id: { in: [otOwn.id, otOther.id, mgrOtOwn.id, mgrOtOther.id] } } }).catch(() => undefined);
     await base.attendanceRecord.deleteMany({ where: { organizationId: orgAId, id: { in: [attOwn.id, attOther.id] } } }).catch(() => undefined);
     await base.department.deleteMany({ where: { organizationId: orgZ.id } }).catch(() => undefined);
     await base.role.deleteMany({ where: { organizationId: orgZ.id, name: { not: 'Admin' } } }).catch(() => undefined);

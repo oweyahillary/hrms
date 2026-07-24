@@ -47,9 +47,12 @@ export class LeaveRequestsController {
     return this.requests.list(user, query);
   }
 
+  // No @Permissions guard — a plain self-service caller may still fetch
+  // their OWN request by id (mirrors cancel() below). The service enforces
+  // visibility: out-of-scope or not-your-own reads as 404, never 200.
   @Get(':id')
-  get(@Param('id') id: string) {
-    return this.requests.get(id);
+  get(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.requests.get(id, user);
   }
 
   @Post(':id/approve')

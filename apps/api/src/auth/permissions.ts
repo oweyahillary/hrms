@@ -166,27 +166,63 @@ export const IMPLIES_VIEW: Readonly<Record<string, string>> = {
   'payroll.run': 'payroll.view', 'payroll.manage': 'payroll.view',
 };
 
+const ALL = (key: string): GrantedPermission => ({ key, scope: 'ALL' });
+const OWN_DEPT = (key: string): GrantedPermission => ({ key, scope: 'OWN_DEPARTMENT' });
+
 const ADMIN_ONLY = ['employees.anonymize', 'users.manage', 'statutory_rates.manage'];
 /** Every permission except the three that were @Roles('Admin')-only before the org-structure-admin migration, each at scope ALL — HR Manager/HR Officer had unrestricted org-wide access, never department-limited. */
 const HR_MANAGEMENT_SET: readonly GrantedPermission[] = PERMISSION_KEYS
   .filter((k) => !ADMIN_ONLY.includes(k))
   .map((key) => ({ key, scope: 'ALL' as const }));
 const ADMIN_SET: readonly GrantedPermission[] = PERMISSION_KEYS.map((key) => ({ key, scope: 'ALL' as const }));
+/**
+ * A department-level supervisor's default reach: see and approve their own
+ * department's leave/overtime, see their own department's attendance and
+ * staff — nothing org-wide, nothing outside their department. Shared
+ * verbatim (same array) by the seeded 'Manager' role default AND the "Line
+ * Supervisor" role template below, so the two can never drift apart — see
+ * the note on ROLE_PERMISSION_DEFAULTS.Manager for why Manager needs this.
+ */
+const DEPARTMENT_SUPERVISOR_SET: readonly GrantedPermission[] = [
+  OWN_DEPT('employees.view'), OWN_DEPT('leave.view'), OWN_DEPT('leave.approve'),
+  OWN_DEPT('overtime.view'), OWN_DEPT('overtime.approve'), OWN_DEPT('attendance.view'),
+];
 
 /**
  * The historically-known role names and the permission set that reproduces
  * their PRE-migration access exactly (see auth/permissions.ts's prior
- * revision, from feat/org-structure-admin, for the 14-key predecessor).
- *
- * 'Manager' and 'Employee' get nothing: neither was ever a member of the old
- * HR_MANAGEMENT_ROLES array, so a login granted the 'Manager' role today has
- * ZERO elevated access — identical to 'Employee'. Preserved exactly.
+ * revision, from feat/org-structure-admin, for the 14-key predecessor) —
+ * with ONE deliberate exception, Manager, below.
  */
 export const ROLE_PERMISSION_DEFAULTS: Readonly<Record<string, readonly GrantedPermission[]>> = {
   Admin: ADMIN_SET,
   'HR Manager': HR_MANAGEMENT_SET,
   'HR Officer': HR_MANAGEMENT_SET,
-  Manager: [],
+  /**
+   * CHANGED 2026-07-25 — a deliberate behaviour change, not a pure refactor.
+   * Previously empty (identical to Employee — neither was ever a member of
+   * the old HR_MANAGEMENT_ROLES array). That was safe only as long as
+   * approve/reject had no permission gate of their own; now that
+   * leave.approve/overtime.approve are hard requirements (see
+   * leave-requests.service.ts's act(), overtime.service.ts's approve()),
+   * an org that names a Manager-role login as a LeaveApprovalStep approver
+   * — which happens automatically any time that person is a department
+   * HEAD, since resolveFor() picks the head's own login regardless of what
+   * role it holds — would have that approver 403 forever. Manager now gets
+   * DEPARTMENT_SUPERVISOR_SET: exactly enough to approve their own team's
+   * leave/overtime and see their own team's attendance/roster, nothing
+   * org-wide. A bare Manager with no department headship still exercises
+   * none of this in practice (nothing routes approvals to them), so this
+   * doesn't change behaviour for a Manager who isn't actually supervising
+   * anyone — only for the case that was silently broken.
+   * Existing orgs: a Manager Role row created before this change still has
+   * `permissions: []` in the database — re-run
+   * apps/api/scripts/backfill-role-permissions.ts to pick up this default
+   * (it overwrites permissions for any Role whose NAME matches one of
+   * these historically-known names; see that script's own doc comment for
+   * exactly what it does and does not touch).
+   */
+  Manager: DEPARTMENT_SUPERVISOR_SET,
   Employee: [],
 };
 
@@ -194,25 +230,22 @@ export const ROLE_PERMISSION_DEFAULTS: Readonly<Record<string, readonly GrantedP
  * Ready-made permission sets for the Settings > Roles "New role" picker —
  * fully editable after creation, not locked presets. Each reflects a real
  * job function; none is constrained by "identical to a seeded role" (these
- * are new, not a refactor of anything).
+ * are new, not a refactor of anything) except Line Supervisor, which
+ * deliberately matches the new Manager default (see above) — it's the same
+ * job, just picked explicitly rather than inherited from a role name.
  */
 export interface RoleTemplate { name: string; description: string; permissions: readonly GrantedPermission[]; }
-const ALL = (key: string): GrantedPermission => ({ key, scope: 'ALL' });
-const OWN_DEPT = (key: string): GrantedPermission => ({ key, scope: 'OWN_DEPARTMENT' });
 
 export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
   {
     name: 'Payroll Officer',
     description: 'Prepares payroll but cannot finalize it — a second person locks the run (maker-checker).',
-    permissions: [ALL('payroll.view'), ALL('payroll.run'), ALL('payroll.manage'), ALL('reports.view')],
+    permissions: [ALL('payroll.view'), ALL('payroll.run'), ALL('payroll.manage'), ALL('reports.view'), ALL('employees.view')],
   },
   {
     name: 'Line Supervisor',
-    description: "Sees and approves their own department's leave, overtime and attendance — nothing outside it.",
-    permissions: [
-      OWN_DEPT('employees.view'), OWN_DEPT('leave.view'), OWN_DEPT('leave.approve'),
-      OWN_DEPT('overtime.view'), OWN_DEPT('overtime.approve'), OWN_DEPT('attendance.view'),
-    ],
+    description: "Sees and approves their own department's leave, overtime and attendance — nothing outside it. Matches the seeded Manager role's default access exactly.",
+    permissions: DEPARTMENT_SUPERVISOR_SET,
   },
   {
     name: 'HR Assistant',
@@ -225,7 +258,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
   {
     name: 'Accountant',
     description: 'Runs payroll and manages statutory rates, but a separate approver finalizes each run.',
-    permissions: [ALL('payroll.view'), ALL('payroll.run'), ALL('payroll.manage'), ALL('reports.view'), ALL('statutory_rates.manage')],
+    permissions: [ALL('payroll.view'), ALL('payroll.run'), ALL('payroll.manage'), ALL('reports.view'), ALL('statutory_rates.manage'), ALL('employees.view')],
   },
   {
     name: 'Compliance Officer',

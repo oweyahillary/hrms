@@ -35,16 +35,61 @@ Every route is protected by a **global `JwtAuthGuard`** — opt out per route wi
 `userId` into the request context, so tenant scoping and audit attribute to the
 real user for the rest of the request.
 
-Restrict by role with `@Roles(...)` (checked by the global `RolesGuard`, which is
-a no-op when no `@Roles` is present):
+Authorization is **permission-based**, not role-name-based — `@Roles(...)`/
+`RolesGuard` were removed. The catalogue of ~25 `resource.action` keys lives in
+`apps/api/src/auth/permissions.ts` (`PERMISSIONS`); a role grants a set of
+`{ key, scope }` pairs, checked by the global `PermissionsGuard`:
 
 ```ts
-@Roles('Admin')
+@Permissions('org_structure.manage')          // ALL of these keys required
 @Post('departments')
 create(@CurrentUser() user: AuthUser, @Body() dto: CreateDepartmentDto) { ... }
+
+@AnyPermission('leave.view', 'leave.approve', 'leave.manage')  // ANY ONE is enough
+@Get()
+list(@CurrentUser() user: AuthUser, @Query() query: QueryLeaveRequestDto) { ... }
 ```
 
-`@CurrentUser()` injects `{ userId, organizationId, role }` from the validated JWT.
+`@CurrentUser()` injects `AuthUser` — `{ userId, organizationId, role, permissions, mustChangePassword }`,
+where `permissions` is the resolved `GrantedPermission[]` (see `resolveRolePermissions()`).
+
+### Scope: ALL vs OWN_DEPARTMENT
+
+A subset of keys (`PermissionDef.scopeable`) can additionally be scoped to
+`OWN_DEPARTMENT` — the grant only applies to rows in the actor's own
+department, resolved via their linked `Employee.departmentId`
+(`DepartmentScopeService.ownDepartmentId`). Scope filters **data**, not just
+route access — the guard only confirms the actor holds the key at all; the
+service layer narrows the query. A non-scopeable key's scope is always
+FORCED to `ALL` server-side (`UsersService.normalize()`), regardless of what
+a client submits — never trust a client-supplied scope on a key that isn't
+`scopeable`.
+
+**Fail closed:** if an OWN_DEPARTMENT-scoped actor has no linked Employee (or
+that Employee has no department), the result is empty/refused — never "falls
+through to everyone." List endpoints return `[]`; single-resource endpoints
+refuse the action.
+
+### 403 vs 404 for out-of-scope resources
+
+**Rule:** a resource outside the actor's scope reads as **404**, identical to
+one that genuinely doesn't exist — never 403. A 403 confirms the resource
+exists (just not for you), which is itself a leak: it tells a Line Supervisor
+that SOME other department has a pending leave request with that id, even
+though they can never see its contents. **403 stays reserved for**: the
+actor lacks a permission on the route at all (caught by the guard, before any
+resource is looked up), or a genuine business-rule refusal unrelated to
+department scope (e.g. "it is not your turn to approve this request" — an
+in-scope caller learning they're not the assigned approver doesn't leak
+anything about another department).
+
+Concretely, in a scoped single-resource method: check scope **first**, right
+after loading the row, before checking status/business-rule details — so an
+out-of-scope caller gets a uniform 404 regardless of the resource's internal
+state (see `LeaveRequestsService.act()`/`cancel()`/`get()` and
+`OvertimeService.assertInScope()` for the pattern). `assertTargetInScope()`
+(leave) and `assertInScope()` (overtime) both throw `NotFoundException`, not
+`ForbiddenException`, for exactly this reason.
 
 ## Seeding the first admin
 

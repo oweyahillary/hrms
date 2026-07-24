@@ -166,7 +166,14 @@ export function PayrollRunDetailPage() {
     void (async () => {
       setLoading(true);
       try {
-        const [r, map] = await Promise.all([getPayrollRun(id), loadEmployeeMap()]);
+        // Independent of the run itself — a role that can view payroll but
+        // not the employee directory (e.g. a Payroll Officer whose employees.view
+        // was later revoked) still sees the run; empLabel() already falls
+        // back to a placeholder for any id missing from the map.
+        const [r, map] = await Promise.all([
+          getPayrollRun(id),
+          loadEmployeeMap().catch(() => new Map<string, EmpInfo>()),
+        ]);
         if (cancelled) return;
         setRun(r);
         setEmpMap(map);

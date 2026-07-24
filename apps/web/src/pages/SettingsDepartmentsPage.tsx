@@ -52,7 +52,14 @@ export function SettingsDepartmentsPage() {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [rows, emps] = await Promise.all([listDepartmentsAdmin(true), loadEmployeeOptions()]);
+      // Independent of the tree itself: employees are only used for the
+      // "head" picker (employeeName() already falls back to '—' for an id
+      // it doesn't have), so a role with org_structure.manage but not
+      // employees.view still sees the department tree.
+      const [rows, emps] = await Promise.all([
+        listDepartmentsAdmin(true),
+        loadEmployeeOptions().catch(() => [] as EmployeeOption[]),
+      ]);
       setTree(flattenDepartmentTree(rows));
       setEmployees(emps);
     } catch {

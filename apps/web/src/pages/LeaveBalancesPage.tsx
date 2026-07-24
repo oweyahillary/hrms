@@ -45,17 +45,18 @@ export function LeaveBalancesPage() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      try {
-        const [emps, tps] = await Promise.all([
-          listEmployees({ status: 'ACTIVE', pageSize: 100, sort: 'name', order: 'asc' }),
-          getLeaveTypes(),
-        ]);
-        if (cancelled) return;
-        setEmployees(emps.data);
-        setTypes(tps);
-      } catch {
-        if (!cancelled) setError('Could not load employees and leave types.');
-      }
+      // Independent: a leave.manage holder without employees.view (a
+      // narrower hand-built role than the shipped templates) can still
+      // manage leave types and run accrual — only the per-employee picker
+      // degrades, rather than the whole page.
+      const [empsResult, tpsResult] = await Promise.allSettled([
+        listEmployees({ status: 'ACTIVE', pageSize: 100, sort: 'name', order: 'asc' }),
+        getLeaveTypes(),
+      ]);
+      if (cancelled) return;
+      if (empsResult.status === 'fulfilled') setEmployees(empsResult.value.data);
+      if (tpsResult.status === 'fulfilled') setTypes(tpsResult.value);
+      if (tpsResult.status === 'rejected') setError('Could not load leave types.');
     })();
     return () => { cancelled = true; };
   }, []);

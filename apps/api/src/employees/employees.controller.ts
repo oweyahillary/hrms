@@ -9,7 +9,7 @@ import { TerminateEmployeeDto } from './dto/terminate-employee.dto';
 import { ListEmployeesDto } from './dto/list-employees.dto';
 import { LookupEmployeeDto } from './dto/lookup-employee.dto';
 import { CreateLoginDto } from './dto/create-login.dto';
-import { Permissions } from '../auth/decorators/permissions.decorator';
+import { AnyPermission, Permissions } from '../auth/decorators/permissions.decorator';
 import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.decorator';
 
 @ApiTags('employees')
@@ -29,8 +29,12 @@ export class EmployeesController {
   // the org's staff directory, not because of what's on the row. Previously
   // ungated (any authenticated user); this migration closes that gap — see
   // the PR notes for why that's not a pure refactor for Manager/Employee.
+  // AnyPermission, not just employees.view: an employees.write-only actor
+  // (the SPA's EMPLOYEES_VIEW route guard already allows either) still needs
+  // to browse the directory to pick who to edit — write is always ALL scope,
+  // so falling through to unrestricted read here is consistent, not a widening.
   @Get()
-  @Permissions('employees.view')
+  @AnyPermission('employees.view', 'employees.write')
   list(@Query() query: ListEmployeesDto, @CurrentUser() user: AuthUser) {
     return this.employees.list(query, user);
   }
@@ -52,8 +56,10 @@ export class EmployeesController {
     return this.employees.numberingPreview();
   }
 
+  // AnyPermission for the same reason as list() above — EmployeeEditPage
+  // (employees.write-gated) loads the record before editing it.
   @Get(':id')
-  @Permissions('employees.view')
+  @AnyPermission('employees.view', 'employees.write')
   get(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.employees.get(id, user);
   }
