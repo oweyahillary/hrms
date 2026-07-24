@@ -7,11 +7,24 @@ import { notifications } from '@mantine/notifications';
 import {
   IconCalendarOff, IconCheck, IconPlus, IconWallet, IconX,
 } from '@tabler/icons-react';
-import { getMyLeave } from '../api/self-service';
+import { getMyLeave, getMyShifts } from '../api/self-service';
 import { cancelLeave, type LeaveBalance, type LeaveRequest } from '../api/leave';
+import type { RosterEntry } from '../api/shifts';
 import { ApiError } from '../api/client';
 import { ErrorCard } from '../components/ErrorCard';
 import { formatDate as fmtDate } from '../utils/date';
+import { shiftColor } from '../utils/shift-color';
+
+function addDays(dateStr: string, n: number): string {
+  const d = new Date(`${dateStr}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function dayLabel(dateIso: string): string {
+  const d = new Date(`${dateIso.slice(0, 10)}T00:00:00.000Z`);
+  const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()];
+  return `${weekday} ${d.getUTCDate()}`;
+}
 
 const STATUS_COLOR: Record<string, string> = {
   PENDING: 'amber', APPROVED: 'brand', REJECTED: 'red', CANCELLED: 'sand',
@@ -29,6 +42,8 @@ export function MyLeavePage() {
   const [balances, setBalances] = useState<LeaveBalance[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [myShifts, setMyShifts] = useState<RosterEntry[] | null>(null);
+  const [shiftsError, setShiftsError] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -43,6 +58,13 @@ export function MyLeavePage() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    void getMyShifts(today, addDays(today, 13))
+      .then(setMyShifts)
+      .catch(() => { setMyShifts([]); setShiftsError(true); });
+  }, []);
 
   const cancel = async (r: LeaveRequest) => {
     setBusyId(r.id);
@@ -74,6 +96,28 @@ export function MyLeavePage() {
           Apply for leave
         </Button>
       </Group>
+
+      <Card p="lg" radius="md">
+        <Text fw={600} mb="md">My roster — next 2 weeks</Text>
+        {myShifts === null ? (
+          <Group gap="xs">
+            {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} h={44} w={64} radius="sm" />)}
+          </Group>
+        ) : shiftsError ? (
+          <Text size="sm" c="sand.6">Your roster could not load.</Text>
+        ) : myShifts.length === 0 ? (
+          <Text size="sm" c="sand.6">No shifts scheduled for you in the next two weeks.</Text>
+        ) : (
+          <Group gap="xs">
+            {myShifts.map((s) => (
+              <Card key={s.id} withBorder p="xs" radius="sm" ta="center" w={64}>
+                <Text size="xs" c="sand.6">{dayLabel(s.date)}</Text>
+                <Badge variant="light" size="sm" color={shiftColor(s.shiftCode)} mt={2}>{s.shiftCode}</Badge>
+              </Card>
+            ))}
+          </Group>
+        )}
+      </Card>
 
       <Card p="lg" radius="md">
         <Text fw={600} mb="md">Balances</Text>

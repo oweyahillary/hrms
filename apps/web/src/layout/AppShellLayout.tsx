@@ -5,7 +5,7 @@ import {
 } from '@mantine/core';
 import {
   IconLayoutDashboard, IconUsers, IconCalendarStats, IconReportMoney, IconChevronDown, IconLogout,
-  IconSettings, IconReceipt2, IconUserCircle, IconUser,
+  IconSettings, IconReceipt2, IconUserCircle, IconUser, IconClockHour4,
 } from '@tabler/icons-react';
 import type { Icon } from '@tabler/icons-react';
 import { useAuth } from '../auth/AuthContext';
@@ -57,6 +57,7 @@ const HR_NAV: NavItem[] = [
       { to: '/leave/types', label: 'Leave types', hrOnly: true },
     ],
   },
+  { to: '/shifts', label: 'Shifts', icon: IconClockHour4 },
 ];
 
 /**
@@ -121,6 +122,7 @@ const ADMIN_NAV: NavItem[] = [
       { to: '/settings/leave', label: 'Leave approval' },
       { to: '/settings/numbering', label: 'Employee numbers' },
       { to: '/settings/payroll', label: 'Payroll' },
+      { to: '/settings/shifts', label: 'Shift definitions' },
       { to: '/settings/users', label: 'Users' },
     ],
   },
