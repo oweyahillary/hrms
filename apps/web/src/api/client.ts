@@ -22,6 +22,16 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * True when a /me/* request was refused because the caller's account has no
+ * Employee record linked (see resolveEmployeeId in self-service.service.ts).
+ * A permanent state fixed by an admin, not a transient failure — pages use
+ * this to show NoEmployeeLinkedState instead of a retry-worthy ErrorCard.
+ */
+export function isNoEmployeeLinkedError(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 404 && e.message.includes('No employee record is linked');
+}
+
 async function raw(path: string, init: RequestInit): Promise<Response> {
   const headers = new Headers(init.headers);
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);

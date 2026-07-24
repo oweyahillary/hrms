@@ -14,6 +14,7 @@ import { PublicHolidaysModule } from './public-holidays/public-holidays.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { AttendanceDevicesModule } from './attendance-devices/attendance-devices.module';
+import { OvertimeModule } from './overtime/overtime.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { SeveranceModule } from './severance/severance.module';
 import { LoansModule } from './loans/loans.module';
@@ -48,6 +49,7 @@ import { HealthModule } from './health/health.module';
     AttendanceModule,
     ShiftsModule,
     AttendanceDevicesModule,
+    OvertimeModule,
     PayrollModule,
     SeveranceModule,
     LoansModule,

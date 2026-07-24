@@ -286,6 +286,8 @@ model Organization {
   roles                 Role[]
   loans                 Loan[]
   payrollAdjustments    PayrollAdjustment[]
+  overtimePolicies      OvertimePolicy[]
+  overtimeEntries       OvertimeEntry[]
 
   @@map("organizations")
 }
@@ -322,6 +324,7 @@ model User {
   createdLoans         Loan[]
   createdAdjustments   PayrollAdjustment[]
   approvedSalaryRevisions SalaryStructure[] @relation("SalaryRevisionApprover")
+  approvedOvertimeEntries OvertimeEntry[]
 
   // DECISION: email scoped-unique per org, NOT globally unique. Keeps the
   // "multi-tenant is a config flip" promise honest — two tenants could
@@ -502,6 +505,7 @@ model Employee {
   severanceCalculations SeveranceCalculation[]
   loans                 Loan[]
   payrollAdjustments    PayrollAdjustment[]
+  overtimeEntries       OvertimeEntry[]
 
   @@unique([organizationId, employeeNumber])
   @@index([nationalIdHmac]) // [T1-1] was nationalId
@@ -851,6 +855,7 @@ model PayrollRun {
   bankExportBatches BankExportBatch[]
   loanRepayments      LoanRepayment[]
   payrollAdjustments  PayrollAdjustment[]
+  overtimeEntries     OvertimeEntry[]
 
   @@index([organizationId, periodYear, periodMonth])
   @@map("payroll_runs")
@@ -1098,4 +1103,121 @@ model PayrollAdjustment {
   @@index([employeeId, status])
   @@index([targetPeriodYear, targetPeriodMonth])
   @@map("payroll_adjustments")
+}
+
+// ----------------------------------------------------------------------------
+// Overtime
+// ----------------------------------------------------------------------------
+
+/// Which divisor turns a monthly basic salary into an hourly rate. Kenyan
+/// practice varies by employer/contract — NOT a settled statutory formula,
+/// so this is data, not a hardcoded constant. See docs/overtime.md for the
+/// arithmetic and the confirmation this still needs from the client.
+enum OvertimeHourlyRateBasis {
+  MONTHLY_X12_DIV_52_WEEKLY_HOURS // (basicSalary * 12 / 52) / normalWeeklyHours — the default
+  MONTHLY_DIV_26_DIV_8 // basicSalary / 26 / 8 — the other common convention
+}
+
+/// Org-scoped, effective-dated (effectiveFrom only — no endDate, same shape as
+/// StatutoryRate/SalaryStructure's simpler cousins): the multipliers/thresholds
+/// that turn derived overtime HOURS into a payable amount. Never hardcode these
+/// in code — see pickEffectiveOvertimePolicy in overtime-derivation.ts.
+model OvertimePolicy {
+  id             String   @id @default(uuid())
+  organizationId String
+  effectiveFrom  DateTime @db.Date
+
+  normalDayMultiplier Decimal @default(1.5) @db.Decimal(4, 2)
+  restDayMultiplier   Decimal @default(2.0) @db.Decimal(4, 2)
+  holidayMultiplier   Decimal @default(2.0) @db.Decimal(4, 2)
+
+  hourlyRateBasis   OvertimeHourlyRateBasis @default(MONTHLY_X12_DIV_52_WEEKLY_HOURS)
+  /// Only used by MONTHLY_X12_DIV_52_WEEKLY_HOURS. Also NOT a settled figure
+  /// for this client — see docs/overtime.md.
+  normalWeeklyHours Int                     @default(45)
+
+  /// Worked minutes beyond a scheduled shift shorter than this are NOT
+  /// overtime — discarded, not rounded up.
+  minimumMinutesToCount Int      @default(30)
+  /// Null = uncapped. Hours beyond this are reported (see the derive
+  /// endpoint's response), never silently dropped.
+  maxHoursPerDay        Decimal? @db.Decimal(4, 2)
+  requiresApproval      Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, effectiveFrom])
+  @@map("overtime_policies")
+}
+
+enum OvertimeCategory {
+  NORMAL_DAY
+  REST_DAY
+  HOLIDAY
+}
+
+enum OvertimeSource {
+  DERIVED
+  MANUAL
+}
+
+enum OvertimeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// One row per employee/day/source. The (employeeId, date, source) unique is
+/// what makes POST /overtime/derive idempotent: re-deriving the same range
+/// updates the existing PENDING DERIVED row in place rather than duplicating
+/// it, and a MANUAL entry for the same day never collides with a DERIVED one
+/// (both can coexist; the approval queue shows both).
+///
+/// Consumption mirrors PayrollAdjustment/Loan exactly (see
+/// PayrollRunsService.buildRun): payrollRunId is stamped at DRAFT-creation
+/// time, not at finalize — finalize only flips PayrollRun.status, it never
+/// touches these rows. Discarding a draft run reverses the stamp (payrollRunId
+/// -> null) so a later run can still pick the entry up; once the run is
+/// FINALIZED, apps/api/db/immutability.sql's payroll_runs/payslips triggers
+/// make the whole run (and therefore what it consumed) immutable — no
+/// separate DB trigger on this table, same as PayrollAdjustment/LoanRepayment
+/// today (protection is the app never re-touching a consumed row + the
+/// parent run being frozen).
+model OvertimeEntry {
+  id             String           @id @default(uuid())
+  organizationId String
+  employeeId     String
+  date           DateTime         @db.Date
+  hours          Decimal          @db.Decimal(5, 2)
+  category       OvertimeCategory
+  source         OvertimeSource   @default(DERIVED)
+  status         OvertimeStatus   @default(PENDING)
+  note           String?
+  approvedByUserId String?
+  approvedAt       DateTime?
+  payrollRunId     String?
+  /// The payable amount (hours * hourly rate * category multiplier), frozen
+  /// at CONSUMPTION time (when payrollRunId is stamped) — null until then.
+  /// Not stored at approval time because the rate depends on the employee's
+  /// basic salary and the policy in force, both resolved when a payroll run
+  /// actually consumes the entry, mirroring how LoanRepayment freezes its
+  /// own computed amount rather than recomputing it later. Cleared back to
+  /// null if a draft run consuming this entry is discarded (see
+  /// PayrollRunsService.remove) — un-consumed, so nothing to display yet.
+  amount           Decimal?         @db.Decimal(10, 2)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  approvedBy   User?        @relation(fields: [approvedByUserId], references: [id], onDelete: Restrict)
+  payrollRun   PayrollRun?  @relation(fields: [payrollRunId], references: [id], onDelete: Restrict)
+
+  @@unique([employeeId, date, source])
+  @@index([organizationId])
+  @@index([employeeId, status])
+  @@index([organizationId, status])
+  @@map("overtime_entries")
 }

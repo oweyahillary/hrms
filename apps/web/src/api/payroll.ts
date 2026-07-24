@@ -46,6 +46,8 @@ export interface Payslip {
   loanRepayments: Array<{ loanId: string; amount: number; scheduledAmount: number; deferredAmount: number }>;
   /** One-off bonuses/deductions this run consumed for this employee. */
   adjustments: Array<{ id: string; type: 'BONUS' | 'DEDUCTION'; amount: number; reason: string | null }>;
+  /** Approved overtime entries this run consumed for this employee — folded into grossPay above, itemized here. */
+  overtime: Array<{ id: string; date: string; hours: number; category: 'NORMAL_DAY' | 'REST_DAY' | 'HOLIDAY'; amount: number }>;
 }
 
 /** An employee who was targeted but had no effective salary structure for the period. */

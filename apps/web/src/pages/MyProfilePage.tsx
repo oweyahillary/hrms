@@ -7,10 +7,12 @@ import {
 } from '@tabler/icons-react';
 import type { Icon } from '@tabler/icons-react';
 import { getMyProfile, type MyProfile } from '../api/self-service';
+import { isNoEmployeeLinkedError } from '../api/client';
 import {
   getDepartments, getJobTitles, departmentMap, jobTitleMap,
 } from '../api/lookups';
 import { ErrorCard } from '../components/ErrorCard';
+import { NoEmployeeLinkedState } from '../components/NoEmployeeLinkedState';
 import { formatDate as fmtDate } from '../utils/date';
 
 const STATUS_COLOR: Record<string, string> = {
@@ -90,12 +92,14 @@ export function MyProfilePage() {
   const [deptNames, setDeptNames] = useState<Map<string, string>>(new Map());
   const [titleNames, setTitleNames] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
+  const [noEmployee, setNoEmployee] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
+    setNoEmployee(false);
     void (async () => {
       try {
         const [me, depts, titles] = await Promise.all([
@@ -105,8 +109,10 @@ export function MyProfilePage() {
         setProfile(me);
         setDeptNames(departmentMap(depts));
         setTitleNames(jobTitleMap(titles));
-      } catch {
-        if (!cancelled) setError('Could not load your profile. Please try again.');
+      } catch (e) {
+        if (cancelled) return;
+        if (isNoEmployeeLinkedError(e)) setNoEmployee(true);
+        else setError('Could not load your profile. Please try again.');
       }
     })();
     return () => { cancelled = true; };
@@ -121,6 +127,15 @@ export function MyProfilePage() {
       bankAccountNumber: show(profile.bankAccountNumber),
     };
   }, [profile, revealed]);
+
+  if (noEmployee) {
+    return (
+      <Stack gap="lg">
+        <Title order={1}>My profile</Title>
+        <NoEmployeeLinkedState />
+      </Stack>
+    );
+  }
 
   if (error) {
     return (

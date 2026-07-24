@@ -15,7 +15,7 @@
     "prisma:studio": "prisma studio",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
     "test": "jest",
-    "test:unit": "node --experimental-strip-types --import ./scripts/ts-resolve-register.mjs --test src/severance/severance-math.spec.ts src/payroll/payroll-extras.spec.ts src/loans/loan-math.spec.ts src/reports/reports-math.spec.ts src/attendance/derive-status.spec.ts src/attendance/punch-pairing.spec.ts",
+    "test:unit": "node --experimental-strip-types --import ./scripts/ts-resolve-register.mjs --test src/severance/severance-math.spec.ts src/payroll/payroll-extras.spec.ts src/loans/loan-math.spec.ts src/reports/reports-math.spec.ts src/attendance/derive-status.spec.ts src/attendance/punch-pairing.spec.ts src/overtime/overtime-derivation.spec.ts",
     "seed": "ts-node scripts/seed.ts",
     "seed:rates": "ts-node scripts/seed-statutory-rates.ts",
     "permissions:backfill": "ts-node scripts/backfill-role-permissions.ts",

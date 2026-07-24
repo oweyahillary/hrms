@@ -3,8 +3,9 @@ import { Badge, Box, Button, Card, Center, Group, Skeleton, Stack, Table, Text, 
 import { notifications } from '@mantine/notifications';
 import { IconAlertTriangle, IconDownload, IconReceiptOff } from '@tabler/icons-react';
 import { getMyPayslips, downloadMyPayslipPdf, type MyPayslip } from '../api/self-service';
-import { ApiError } from '../api/client';
+import { ApiError, isNoEmployeeLinkedError } from '../api/client';
 import { ErrorCard } from '../components/ErrorCard';
+import { NoEmployeeLinkedState } from '../components/NoEmployeeLinkedState';
 import { kes } from '../utils/money';
 
 function periodLabel(month: number | null, year: number | null): string {
@@ -17,15 +18,18 @@ function periodLabel(month: number | null, year: number | null): string {
 export function MyPayslipsPage() {
   const [rows, setRows] = useState<MyPayslip[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [noEmployee, setNoEmployee] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
+    setNoEmployee(false);
     try {
       setRows(await getMyPayslips());
-    } catch {
+    } catch (e) {
       setRows([]);
-      setError('Could not load your payslips. Please try again.');
+      if (isNoEmployeeLinkedError(e)) setNoEmployee(true);
+      else setError('Could not load your payslips. Please try again.');
     }
   }, []);
 
@@ -54,9 +58,10 @@ export function MyPayslipsPage() {
       </div>
 
       <Card p="lg" radius="md">
+        {noEmployee && <NoEmployeeLinkedState />}
         {error && <ErrorCard message={error} onRetry={() => void load()} retrying={rows === null} />}
 
-        {!error && <>
+        {!noEmployee && !error && <>
         <Box visibleFrom="sm">
           <Table.ScrollContainer minWidth={520}>
             <Table verticalSpacing="sm" horizontalSpacing="md">

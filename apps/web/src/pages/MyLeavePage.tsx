@@ -10,8 +10,9 @@ import {
 import { getMyLeave, getMyShifts } from '../api/self-service';
 import { cancelLeave, type LeaveBalance, type LeaveRequest } from '../api/leave';
 import type { RosterEntry } from '../api/shifts';
-import { ApiError } from '../api/client';
+import { ApiError, isNoEmployeeLinkedError } from '../api/client';
 import { ErrorCard } from '../components/ErrorCard';
+import { NoEmployeeLinkedState } from '../components/NoEmployeeLinkedState';
 import { formatDate as fmtDate } from '../utils/date';
 import { shiftColor } from '../utils/shift-color';
 
@@ -41,6 +42,7 @@ export function MyLeavePage() {
   const [requests, setRequests] = useState<LeaveRequest[] | null>(null);
   const [balances, setBalances] = useState<LeaveBalance[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [noEmployee, setNoEmployee] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [myShifts, setMyShifts] = useState<RosterEntry[] | null>(null);
   const [shiftsError, setShiftsError] = useState(false);
@@ -51,20 +53,27 @@ export function MyLeavePage() {
       setRequests(data.requests);
       setBalances(data.balances);
       setError(null);
-    } catch {
+      setNoEmployee(false);
+    } catch (e) {
       setRequests([]); setBalances([]);
-      setError('Could not load your leave. Please try again.');
+      if (isNoEmployeeLinkedError(e)) setNoEmployee(true);
+      else setError('Could not load your leave. Please try again.');
     }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
+    // Same account, same underlying cause as `load` above — skip the extra
+    // fetch (and its own "could not load" text) once we already know there's
+    // no employee linked, rather than showing two different failure messages
+    // for the one root cause.
+    if (noEmployee) return;
     const today = new Date().toISOString().slice(0, 10);
     void getMyShifts(today, addDays(today, 13))
       .then(setMyShifts)
       .catch(() => { setMyShifts([]); setShiftsError(true); });
-  }, []);
+  }, [noEmployee]);
 
   const cancel = async (r: LeaveRequest) => {
     setBusyId(r.id);
@@ -84,6 +93,15 @@ export function MyLeavePage() {
       setBusyId(null);
     }
   };
+
+  if (noEmployee) {
+    return (
+      <Stack gap="lg">
+        <Title order={1}>My leave</Title>
+        <NoEmployeeLinkedState />
+      </Stack>
+    );
+  }
 
   return (
     <Stack gap="lg">

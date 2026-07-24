@@ -68,6 +68,26 @@ async function main() {
     }
   }
 
+  // A default overtime policy so derive()/payroll never fall back to
+  // hardcoded constants for a real org — same "data, not code" philosophy as
+  // the shifts above. effectiveFrom far enough in the past to always be in
+  // force; HR edits it (or adds a future-dated version) from Settings.
+  // normalDayMultiplier/restDayMultiplier/holidayMultiplier, hourlyRateBasis
+  // and normalWeeklyHours are NOT settled figures for any specific client —
+  // see docs/overtime.md — these are reasonable starting defaults, not a
+  // confirmed value.
+  const existingOvertimePolicy = await prisma.overtimePolicy.findFirst({ where: { organizationId: org.id } });
+  if (!existingOvertimePolicy) {
+    await prisma.overtimePolicy.create({
+      data: {
+        organizationId: org.id, effectiveFrom: new Date('2020-01-01T00:00:00.000Z'),
+        normalDayMultiplier: 1.5, restDayMultiplier: 2, holidayMultiplier: 2,
+        hourlyRateBasis: 'MONTHLY_X12_DIV_52_WEEKLY_HOURS', normalWeeklyHours: 45,
+        minimumMinutesToCount: 30, maxHoursPerDay: null, requiresApproval: true,
+      },
+    });
+  }
+
   console.log('\n--- Seed complete ---');
   console.log('Organization ID :', org.id);
   console.log('Admin email     :', email);

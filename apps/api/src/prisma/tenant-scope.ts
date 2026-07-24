@@ -20,6 +20,7 @@ export const TENANT_SCOPED_MODELS: ReadonlySet<string> = new Set([
   'SalaryStructure', 'PayrollRun',
   'ConsentRecord', 'DataSubjectRequest', 'RetentionPolicy', 'BreachIncident',
   'SeveranceCalculation', 'Loan', 'PayrollAdjustment',
+  'OvertimePolicy', 'OvertimeEntry',
 ]);
 
 export const WHERE_INJECTABLE: ReadonlySet<string> = new Set([

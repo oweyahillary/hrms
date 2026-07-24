@@ -5,7 +5,7 @@ import {
 } from '@mantine/core';
 import {
   IconLayoutDashboard, IconUsers, IconCalendarStats, IconReportMoney, IconChevronDown, IconLogout,
-  IconSettings, IconReceipt2, IconUserCircle, IconUser, IconClockHour4, IconClipboardCheck,
+  IconSettings, IconReceipt2, IconUserCircle, IconUser, IconClockHour4, IconClipboardCheck, IconClockPlus,
 } from '@tabler/icons-react';
 import type { Icon } from '@tabler/icons-react';
 import { useAuth } from '../auth/AuthContext';
@@ -62,6 +62,8 @@ const HR_NAV: NavItem[] = [
   },
   { to: '/shifts', label: 'Shifts', icon: IconClockHour4, permission: 'shifts.manage' },
   { to: '/attendance', label: 'Attendance', icon: IconClipboardCheck, permission: 'attendance.manage' },
+  // payroll.manage is a temporary mapping — see the matching note in App.tsx.
+  { to: '/overtime', label: 'Overtime', icon: IconClockPlus, permission: 'payroll.manage' },
 ];
 
 /**
@@ -88,6 +90,7 @@ const SELF_SERVICE_NAV: NavItem[] = [
     ],
   },
   { to: '/me/attendance', label: 'My attendance', icon: IconClipboardCheck },
+  { to: '/me/overtime', label: 'My overtime', icon: IconClockPlus },
   { to: '/me/profile', label: 'My profile', icon: IconUserCircle },
 ];
 
@@ -101,6 +104,7 @@ const MY_SPACE_NAV: NavItem[] = [
       { to: '/me/leave', label: 'My leave', exact: true },
       { to: '/leave/apply', label: 'Apply for leave' },
       { to: '/me/attendance', label: 'My attendance' },
+      { to: '/me/overtime', label: 'My overtime' },
       { to: '/me/profile', label: 'My profile' },
     ],
   },
@@ -118,7 +122,7 @@ const PAYROLL_NAV: NavItem[] = [
 ];
 
 const SETTINGS_PERMS = [
-  'settings.manage', 'users.manage', 'org_structure.manage', 'shifts.manage', 'attendance.manage',
+  'settings.manage', 'users.manage', 'org_structure.manage', 'shifts.manage', 'attendance.manage', 'payroll.manage',
 ];
 
 /** Settings is organisation administration — only for roles that can manage some part of it. */
@@ -136,6 +140,7 @@ const ADMIN_NAV: NavItem[] = [
       { to: '/settings/departments', label: 'Departments', permission: 'org_structure.manage' },
       { to: '/settings/shifts', label: 'Shift definitions', permission: 'shifts.manage' },
       { to: '/settings/devices', label: 'Devices', permission: 'attendance.manage' },
+      { to: '/settings/overtime', label: 'Overtime policy', permission: 'payroll.manage' },
       { to: '/settings/users', label: 'Users', permission: 'users.manage' },
       { to: '/settings/roles', label: 'Roles', permission: 'users.manage' },
     ],

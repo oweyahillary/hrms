@@ -225,6 +225,10 @@ jobs:
           npx ts-node scripts/verify-device-push.ts
           echo "::endgroup::"
 
+          echo "::group::verify overtime"
+          npx ts-node scripts/verify-overtime.ts
+          echo "::endgroup::"
+
           echo "::group::verify permissions"
           npx ts-node scripts/verify-permissions.ts
           echo "::endgroup::"
