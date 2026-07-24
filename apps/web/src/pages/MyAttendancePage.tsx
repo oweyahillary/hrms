@@ -4,8 +4,10 @@ import {
 } from '@mantine/core';
 import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 import { getMyAttendance } from '../api/self-service';
+import { isNoEmployeeLinkedError } from '../api/client';
 import { ATTENDANCE_STATUSES, type AttendanceRecord, type AttendanceStatus } from '../api/attendance';
 import { ErrorCard } from '../components/ErrorCard';
+import { NoEmployeeLinkedState } from '../components/NoEmployeeLinkedState';
 import { shiftColor } from '../utils/shift-color';
 
 const STATUS_LABEL: Record<AttendanceStatus, string> = {
@@ -40,16 +42,19 @@ export function MyAttendancePage() {
   const [month, setMonth] = useState(currentMonth());
   const [records, setRecords] = useState<AttendanceRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [noEmployee, setNoEmployee] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
   const load = useCallback(async () => {
     setError(null);
+    setNoEmployee(false);
     setRecords(null);
     try {
       const { from, to } = monthRange(month);
       setRecords(await getMyAttendance(from, to));
-    } catch {
-      setError('Your attendance could not load. Check your connection and try again.');
+    } catch (e) {
+      if (isNoEmployeeLinkedError(e)) setNoEmployee(true);
+      else setError('Your attendance could not load. Check your connection and try again.');
     }
   }, [month]);
 
@@ -83,9 +88,10 @@ export function MyAttendancePage() {
         </Group>
       </Group>
 
+      {noEmployee && <NoEmployeeLinkedState />}
       {error && <ErrorCard message={error} onRetry={() => setReloadKey((k) => k + 1)} retrying={records === null} />}
 
-      {!error && (
+      {!noEmployee && !error && (
         <>
           <SimpleGrid cols={{ base: 2, sm: 4 }}>
             {ATTENDANCE_STATUSES.map((s) => (

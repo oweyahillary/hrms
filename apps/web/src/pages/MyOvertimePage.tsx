@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { Badge, Box, Card, Group, Skeleton, Stack, Table, Text, TextInput, Title } from '@mantine/core';
 import { IconClockPlus } from '@tabler/icons-react';
 import { getMyOvertime, type OvertimeEntry, type OvertimeCategory, type OvertimeStatus } from '../api/overtime';
+import { isNoEmployeeLinkedError } from '../api/client';
 import { ErrorCard } from '../components/ErrorCard';
 import { EmptyState } from '../components/EmptyState';
+import { NoEmployeeLinkedState } from '../components/NoEmployeeLinkedState';
 import { formatDate } from '../utils/date';
 import { kes } from '../utils/money';
 
@@ -20,14 +22,16 @@ export function MyOvertimePage() {
   const [rows, setRows] = useState<OvertimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [noEmployee, setNoEmployee] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
   const load = useCallback(async () => {
-    setLoading(true); setError(null);
+    setLoading(true); setError(null); setNoEmployee(false);
     try {
       setRows(await getMyOvertime(from, to));
-    } catch {
-      setError('Your overtime could not load. Check your connection and try again.');
+    } catch (e) {
+      if (isNoEmployeeLinkedError(e)) setNoEmployee(true);
+      else setError('Your overtime could not load. Check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -50,16 +54,17 @@ export function MyOvertimePage() {
         </Group>
       </Group>
 
+      {noEmployee && <NoEmployeeLinkedState />}
       {error && <ErrorCard message={error} onRetry={() => setReloadKey((k) => k + 1)} retrying={loading} />}
 
-      {!error && !loading && rows.length > 0 && (
+      {!noEmployee && !error && !loading && rows.length > 0 && (
         <Card p="md" radius="md">
           <Text size="sm" c="sand.6">Approved this range</Text>
           <Text size="xl" fw={700}>{kes(approvedTotal)}</Text>
         </Card>
       )}
 
-      {!error && (
+      {!noEmployee && !error && (
         <Card p={0} radius="md">
           <Box visibleFrom="sm" style={{ overflowX: 'auto' }}>
             <Table.ScrollContainer minWidth={640}>
