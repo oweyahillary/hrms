@@ -13,7 +13,7 @@
  *   cd apps/api && npx ts-node scripts/verify-leave-requests.ts
  */
 import 'dotenv/config';
-import { createPrismaClient } from '../src/prisma/prisma.service';
+import { createPrismaClient, baseClientOf } from '../src/prisma/prisma.service';
 import { PasswordService } from '../src/auth/password.service';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3000/api';
@@ -235,6 +235,100 @@ async function main(): Promise<void> {
     !tooBig.id, JSON.stringify(tooBig.message));
   check('the refused request left the balance alone',
     (await balanceNow()).availableDays === fresh);
+
+  // ------------------------------------------------------------------
+  // Cross-tenant policy isolation: approvalPolicy() used to read
+  // Organization.findFirst() with NO where clause at all — whichever org
+  // happened to sort first backed EVERY org's approval resolution. Prove the
+  // fix by giving org A and a throwaway org B distinct, deliberately
+  // different HR approvers and confirming each org's requests resolve to
+  // its OWN approver, never the other's — checked both directions.
+  // ------------------------------------------------------------------
+  await setPolicy({ leaveApprovalMode: 'DEPT_HEAD_THEN_HR', leaveHrApproverUserId: admin.id, allowEmployeeChosenApprovers: false });
+
+  const base = baseClientOf(prisma) as any;
+  const orgB = await base.organization.create({ data: { name: `__leave_policy_probe_${stamp}__` } });
+  const roleB = await base.role.create({ data: { organizationId: orgB.id, name: 'Admin', permissions: { all: true } } });
+  const orgBAdminEmail = `leavepolicy.b.admin.${stamp}@example.com`;
+  const orgBAdminPassword = 'OrgBAdmin123!';
+  const orgBAdminUser = await base.user.create({
+    data: {
+      organizationId: orgB.id, email: orgBAdminEmail,
+      passwordHash: await passwords.hash(orgBAdminPassword),
+      mustChangePassword: false, roleId: roleB.id,
+    },
+  });
+
+  let orgBEmpUserId: string | null = null;
+  try {
+    const tokenBAdmin = await loginAs(orgBAdminEmail, orgBAdminPassword);
+    const bJson = { Authorization: `Bearer ${tokenBAdmin}`, 'Content-Type': 'application/json' };
+    const bAuth = { Authorization: `Bearer ${tokenBAdmin}` };
+
+    // org B's own HR approver is its own admin — deliberately NOT org A's admin.id.
+    await fetch(`${BASE}/organization/leave-approval`, {
+      method: 'PATCH', headers: bJson,
+      body: JSON.stringify({ leaveApprovalMode: 'HR_ONLY', leaveHrApproverUserId: orgBAdminUser.id, allowEmployeeChosenApprovers: false }),
+    });
+
+    const empBRes = await fetch(`${BASE}/employees`, {
+      method: 'POST', headers: bJson,
+      body: JSON.stringify({
+        employeeNumber: `POLICYB-${stamp}`, firstName: 'PolicyProbe', lastName: 'B',
+        nationalId: `${String(stamp).slice(-7)}9`, employmentType: 'PERMANENT', hireDate: '2020-01-01',
+      }),
+    });
+    const empB = ((await empBRes.json()) as { id?: string }).id;
+    if (!empB) { console.log('  FAIL  org-B employee create'); process.exit(1); }
+
+    const typeBRes = await fetch(`${BASE}/leave-types`, {
+      method: 'POST', headers: bJson,
+      body: JSON.stringify({ name: `PolicyProbeLeave-${stamp}`, accrualMethod: 'NONE', annualDays: 40 }),
+    });
+    const typeB = ((await typeBRes.json()) as { id?: string }).id;
+
+    // Preview: org B's own admin resolves as the approver, not org A's.
+    const previewB = (await (await fetch(
+      `${BASE}/leave-requests/approvers-for?employeeId=${empB}`, { headers: bAuth },
+    )).json()) as { approvers: Array<{ userId: string }> };
+    check('org B\'s approver preview resolves to ITS OWN HR approver',
+      previewB.approvers?.[0]?.userId === orgBAdminUser.id, JSON.stringify(previewB));
+    check('org B\'s approver preview does NOT resolve to org A\'s HR approver',
+      !previewB.approvers?.some((a) => a.userId === admin.id), JSON.stringify(previewB));
+
+    // Actually create the request (derived chain, no explicit approverUserIds)
+    // and confirm the stored LeaveApprovalStep points at org B's own approver.
+    const reqBRes = await fetch(`${BASE}/leave-requests`, {
+      method: 'POST', headers: bJson,
+      body: JSON.stringify({ employeeId: empB, leaveTypeId: typeB, startDate: `${YEAR}-03-03`, endDate: `${YEAR}-03-03`, reason: 'cross-tenant policy probe' }),
+    });
+    const reqB = (await reqBRes.json()) as Req;
+    check('org B\'s leave request resolves its approval chain to org B\'s own HR approver',
+      reqB.approvalSteps?.[0]?.approverUserId === orgBAdminUser.id, JSON.stringify(reqB.approvalSteps ?? reqB.message));
+
+    // The other direction: org A's own resolution must be unaffected by org
+    // B's policy having just been set (proves this isn't a one-way accident
+    // of creation order — the bug was "whichever org sorts first wins").
+    const previewA = (await (await fetch(
+      `${BASE}/leave-requests/approvers-for?employeeId=${employee}`, { headers: adminAuth },
+    )).json()) as { approvers: Array<{ userId: string }> };
+    check('org A\'s approver preview still resolves to ITS OWN HR approver after org B\'s policy was set',
+      previewA.approvers?.[0]?.userId === admin.id, JSON.stringify(previewA));
+
+    const orgBEmpRow = await base.user.findFirst({ where: { organizationId: orgB.id, email: orgBAdminEmail } });
+    orgBEmpUserId = orgBEmpRow?.id ?? null;
+  } finally {
+    // Organization itself is never deleted once real auth activity (a login,
+    // here) has touched it — see verify-self-service.ts / verify-attendance-ui.ts
+    // for the same rationale. Everything else is fully cleanable.
+    await base.leaveRequest.deleteMany({ where: { organizationId: orgB.id } }).catch(() => undefined);
+    await base.leaveType.deleteMany({ where: { organizationId: orgB.id } }).catch(() => undefined);
+    const userIds = [orgBAdminUser.id, ...(orgBEmpUserId && orgBEmpUserId !== orgBAdminUser.id ? [orgBEmpUserId] : [])];
+    await base.session.deleteMany({ where: { userId: { in: userIds } } }).catch(() => undefined);
+    await base.user.deleteMany({ where: { organizationId: orgB.id } }).catch(() => undefined);
+    await base.employee.deleteMany({ where: { organizationId: orgB.id } }).catch(() => undefined);
+    await base.role.deleteMany({ where: { organizationId: orgB.id } }).catch(() => undefined);
+  }
 
   // --- restore + tidy up after ourselves
   await setPolicy({

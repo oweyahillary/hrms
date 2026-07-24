@@ -11,6 +11,8 @@
  * Creates and finalizes its own runs on the ephemeral CI database.
  */
 import 'dotenv/config';
+import { createPrismaClient, baseClientOf } from '../src/prisma/prisma.service';
+import { PasswordService } from '../src/auth/password.service';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3000/api';
 const YEAR = 2099; // unused period, avoids colliding with other fixtures
@@ -24,6 +26,7 @@ interface P9Row {
 interface P9Card {
   monthsIncluded: number;
   reconciles: boolean;
+  employer: { name: string; kraPin: string };
   employee: { kraPin: string };
   rows: P9Row[];
   totals: Omit<P9Row, 'month' | 'reconciles'>;
@@ -115,6 +118,85 @@ async function main(): Promise<void> {
   check('P9 PDF Content-Type is application/pdf',
     (pdfRes.headers.get('content-type') ?? '').includes('application/pdf'),
     pdfRes.headers.get('content-type') ?? 'none');
+
+  // ------------------------------------------------------------------
+  // Cross-tenant employer isolation: cardForEmployee() used to read
+  // Organization.findFirst() with NO where clause — whichever org happened
+  // to sort first stamped its name AND KRA PIN onto EVERY org's P9 card, a
+  // statutory tax document. Prove the fix with a throwaway org B (zero
+  // payroll data — cardForEmployee() resolves employer before touching any
+  // payslips, so an employee with no salary/run history is enough), both
+  // directions.
+  // ------------------------------------------------------------------
+  const brandingBefore = (await (await fetch(`${BASE}/organization/branding`, { headers: auth })).json()) as {
+    name: string; kraPin: string | null;
+  };
+  const orgAName = brandingBefore.name;
+  const orgAKraPin = 'P000000001A';
+  await fetch(`${BASE}/organization/branding`, {
+    method: 'PATCH', headers: authJson, body: JSON.stringify({ kraPin: orgAKraPin }),
+  });
+
+  const prisma = createPrismaClient();
+  const base = baseClientOf(prisma) as any;
+  const passwords = new PasswordService();
+  const orgBName = `P9 Probe Co ${stamp}`;
+  const orgBKraPin = 'Q000000002B';
+  const orgB = await base.organization.create({ data: { name: orgBName, kraPin: orgBKraPin } });
+  const roleB = await base.role.create({ data: { organizationId: orgB.id, name: 'Admin', permissions: { all: true } } });
+  const orgBAdminEmail = `p9.b.admin.${stamp}@example.com`;
+  const orgBAdminPassword = 'OrgBAdmin123!';
+  const orgBAdminUser = await base.user.create({
+    data: {
+      organizationId: orgB.id, email: orgBAdminEmail,
+      passwordHash: await passwords.hash(orgBAdminPassword),
+      mustChangePassword: false, roleId: roleB.id,
+    },
+  });
+
+  let empB: string | undefined;
+  try {
+    const loginB = await fetch(`${BASE}/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: orgBAdminEmail, password: orgBAdminPassword }),
+    });
+    const tokenB = ((await loginB.json()) as { accessToken?: string }).accessToken;
+    if (!tokenB) { console.log('  FAIL  login as org B admin'); process.exit(1); }
+    const authB = { Authorization: `Bearer ${tokenB}`, 'Content-Type': 'application/json' };
+
+    const empBRes = await fetch(`${BASE}/employees`, {
+      method: 'POST', headers: authB,
+      body: JSON.stringify({
+        employeeNumber: `P9B-${stamp}`, firstName: 'P9Probe', lastName: 'B',
+        nationalId: `${nid.slice(0, 7)}9`, employmentType: 'PERMANENT', hireDate: '2020-01-01',
+      }),
+    });
+    empB = ((await empBRes.json()) as { id?: string }).id;
+    if (!empB) { console.log('  FAIL  org-B employee create'); process.exit(1); }
+
+    const cardB = (await (await fetch(`${BASE}/employees/${empB}/p9?year=${YEAR}`, { headers: { Authorization: `Bearer ${tokenB}` } })).json()) as P9Card;
+    check('org B\'s P9 card carries ITS OWN employer name', cardB.employer?.name === orgBName, cardB.employer?.name ?? 'undefined');
+    check('org B\'s P9 card carries ITS OWN employer KRA PIN', cardB.employer?.kraPin === orgBKraPin, cardB.employer?.kraPin ?? 'undefined');
+    check('org B\'s P9 card does NOT carry org A\'s employer name', cardB.employer?.name !== orgAName, cardB.employer?.name ?? 'undefined');
+
+    // Bidirectional: org A's own card, re-fetched AFTER org B was created,
+    // must still carry ITS OWN employer identity.
+    const cardAAfter = (await (await fetch(`${BASE}/employees/${employeeId}/p9?year=${YEAR}`, { headers: auth })).json()) as P9Card;
+    check('org A\'s P9 card still carries ITS OWN employer name after org B was created', cardAAfter.employer?.name === orgAName, cardAAfter.employer?.name ?? 'undefined');
+    check('org A\'s P9 card still carries ITS OWN employer KRA PIN after org B was created', cardAAfter.employer?.kraPin === orgAKraPin, cardAAfter.employer?.kraPin ?? 'undefined');
+  } finally {
+    await fetch(`${BASE}/organization/branding`, {
+      method: 'PATCH', headers: authJson, body: JSON.stringify({ kraPin: brandingBefore.kraPin ?? '' }),
+    });
+    // Organization itself is never deleted once real auth activity (a
+    // login, here) has touched it — see verify-self-service.ts /
+    // verify-attendance-ui.ts for the same rationale.
+    await base.session.deleteMany({ where: { userId: orgBAdminUser.id } }).catch(() => undefined);
+    await base.user.deleteMany({ where: { organizationId: orgB.id } }).catch(() => undefined);
+    if (empB) await base.employee.deleteMany({ where: { id: empB } }).catch(() => undefined);
+    await base.role.deleteMany({ where: { organizationId: orgB.id } }).catch(() => undefined);
+    await (prisma as any).$disconnect?.();
+  }
 
   console.log(`\n  ${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);
