@@ -105,6 +105,10 @@ jobs:
           SEED_FORCE_PASSWORD_CHANGE=false npm run seed
           npm run seed:rates
 
+      - name: Backfill role permissions (pre-migration role rows)
+        working-directory: apps/api
+        run: npm run permissions:backfill
+
       - name: Apply immutability triggers
         working-directory: apps/api
         run: npm run db:immutability
@@ -219,6 +223,10 @@ jobs:
 
           echo "::group::verify device-push"
           npx ts-node scripts/verify-device-push.ts
+          echo "::endgroup::"
+
+          echo "::group::verify permissions"
+          npx ts-node scripts/verify-permissions.ts
           echo "::endgroup::"
 
       - name: API logs on failure
