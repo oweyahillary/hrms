@@ -13,7 +13,7 @@ import {
 import { Link } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import { hasPermission } from '../auth/permissions';
+import { hasAnyPermission } from '../auth/permissions';
 import { ErrorCard } from '../components/ErrorCard';
 import { formatDate as fmtDate } from '../utils/date';
 
@@ -112,7 +112,10 @@ function RequestRows({
 
 export function LeavePage() {
   const { user } = useAuth();
-  const isHr = hasPermission(user?.permissions, 'leave.manage');
+  // Anyone who can reach the "all requests" list at all (view, approve or
+  // manage) sees org/department-wide rows server-side — the label needs to
+  // match that, not just the full-manage case.
+  const isHr = hasAnyPermission(user?.permissions, ['leave.view', 'leave.approve', 'leave.manage']);
 
   const [tab, setTab] = useState<string | null>('inbox');
   const [status, setStatus] = useState<string | null>(null);

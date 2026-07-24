@@ -7,7 +7,7 @@ import { IconPlus, IconReportMoney, IconArrowUpRight } from '@tabler/icons-react
 import { listPayrollRuns, type PayrollRunListItem, type PayrollRunStatus, type PayrollRunType } from '../api/payroll';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import { hasPermission } from '../auth/permissions';
+import { hasAnyPermission } from '../auth/permissions';
 import { ErrorCard } from '../components/ErrorCard';
 
 const STATUS_COLOR: Record<PayrollRunStatus, string> = {
@@ -33,7 +33,9 @@ function fmtDateTime(iso: string): string {
 export function PayrollRunsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const allowed = hasPermission(user?.permissions, 'payroll.run');
+  // Matches the API's list gate (@AnyPermission on payroll.view/run/finalize)
+  // — a view-only or finalize-only holder still needs to see the list.
+  const allowed = hasAnyPermission(user?.permissions, ['payroll.view', 'payroll.run', 'payroll.finalize']);
 
   const [runs, setRuns] = useState<PayrollRunListItem[]>([]);
   const [loading, setLoading] = useState(true);

@@ -1,4 +1,5 @@
 import { api } from './client';
+import type { GrantedPermission } from '../auth/permissions';
 
 export interface UserRow {
   id: string;
@@ -20,12 +21,22 @@ export interface PermissionDef {
   key: string;
   label: string;
   description: string;
+  /** Which resource group this belongs to, for the grouped Roles UI. */
+  resource: string;
+  /** Whether OWN_DEPARTMENT is a real, enforced option for this key — false means always show it as ALL, no scope picker. */
+  scopeable: boolean;
+}
+
+export interface RoleTemplate {
+  name: string;
+  description: string;
+  permissions: GrantedPermission[];
 }
 
 export interface AdminRole {
   id: string;
   name: string;
-  permissions: string[];
+  permissions: GrantedPermission[];
   /** One of the historically-known role names (Admin, HR Manager, HR Officer, Manager, Employee) — editable but not deletable. */
   isSeeded: boolean;
   userCount: number;
@@ -33,12 +44,12 @@ export interface AdminRole {
 
 export interface CreateRoleInput {
   name: string;
-  permissions: string[];
+  permissions: GrantedPermission[];
 }
 
 export interface UpdateRoleInput {
   name?: string;
-  permissions?: string[];
+  permissions?: GrantedPermission[];
 }
 
 export interface CreateUserInput {
@@ -74,6 +85,9 @@ export const listRoles = (): Promise<RoleOption[]> => api<RoleOption[]>('/roles'
 export const getPermissionCatalogue = (): Promise<PermissionDef[]> => api<PermissionDef[]>('/roles/catalogue');
 
 export const listAdminRoles = (): Promise<AdminRole[]> => api<AdminRole[]>('/roles');
+
+/** Ready-made permission sets for the "New role" picker — fully editable after creation. */
+export const getRoleTemplates = (): Promise<RoleTemplate[]> => api<RoleTemplate[]>('/roles/templates');
 
 export const createRole = (input: CreateRoleInput): Promise<AdminRole> =>
   api<AdminRole>('/roles', { method: 'POST', body: JSON.stringify(input) });

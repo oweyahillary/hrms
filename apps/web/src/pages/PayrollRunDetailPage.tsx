@@ -20,7 +20,7 @@ import {
 import { listEmployees } from '../api/employees';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import { hasPermission } from '../auth/permissions';
+import { hasAnyPermission } from '../auth/permissions';
 import { ErrorCard } from '../components/ErrorCard';
 import { kes } from '../utils/money';
 
@@ -114,7 +114,9 @@ export function PayrollRunDetailPage() {
   const { id = '' } = useParams();
   const location = useLocation();
   const { user } = useAuth();
-  const allowed = hasPermission(user?.permissions, 'payroll.run');
+  // Matches the API's view gate (@AnyPermission on payroll.view/run/finalize)
+  // — a view-only or finalize-only holder still needs to see the run.
+  const allowed = hasAnyPermission(user?.permissions, ['payroll.view', 'payroll.run', 'payroll.finalize']);
 
   const [run, setRun] = useState<PayrollRunDetail | null>(null);
   const [loading, setLoading] = useState(true);
