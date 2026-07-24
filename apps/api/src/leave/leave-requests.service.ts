@@ -56,7 +56,7 @@ export class LeaveRequestsService {
     if (!emp) throw new BadRequestException('employeeId does not exist');
     if (!type) throw new BadRequestException('leaveTypeId does not exist');
 
-    const policy = await this.approvalPolicy();
+    const policy = await this.approvalPolicy(actor.organizationId);
 
     let approverIds: string[];
     if (policy.allowEmployeeChosenApprovers && dto.approverUserIds?.length) {
@@ -161,11 +161,19 @@ export class LeaveRequestsService {
   }
 
   /** Requests currently awaiting THIS user's approval. */
-  /** The organisation's leave approval policy. */
-  private async approvalPolicy(): Promise<{
+  /**
+   * The organisation's leave approval policy. Organization is deliberately
+   * NOT auto-scoped by the tenant extension (it IS the tenant — see
+   * docs/spine.md), so unlike every other query in this file, this one must
+   * filter by id explicitly. Mirrors organization.service.ts's
+   * getPayrollSettings/getAttendanceSettings, the established correct
+   * pattern for this exact situation.
+   */
+  private async approvalPolicy(orgId: string): Promise<{
     mode: LeaveApprovalMode; hrApproverUserId: string | null; allowEmployeeChosenApprovers: boolean;
   }> {
     const org = (await this.prisma.organization.findFirst({
+      where: { id: orgId },
       select: {
         leaveApprovalMode: true, leaveHrApproverUserId: true, allowEmployeeChosenApprovers: true,
       },
@@ -229,8 +237,8 @@ export class LeaveRequestsService {
    * Preview who will approve a given employee's leave, so the apply screen can
    * state it plainly instead of asking the applicant to choose.
    */
-  async approversFor(employeeId: string) {
-    const policy = await this.approvalPolicy();
+  async approversFor(employeeId: string, orgId: string) {
+    const policy = await this.approvalPolicy(orgId);
     const resolved = await this.resolveFor(employeeId, policy);
 
     const users = resolved.approverUserIds.length

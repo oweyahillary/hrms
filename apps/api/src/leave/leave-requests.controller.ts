@@ -30,8 +30,8 @@ export class LeaveRequestsController {
 
   /** Who WILL approve this employee's leave, under the org's policy. */
   @Get('approvers-for')
-  approversFor(@Query('employeeId') employeeId: string) {
-    return this.requests.approversFor(employeeId);
+  approversFor(@Query('employeeId') employeeId: string, @CurrentUser() user: AuthUser) {
+    return this.requests.approversFor(employeeId, user.organizationId);
   }
 
   @Get()

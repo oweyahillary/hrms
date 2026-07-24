@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PRISMA, type ExtendedPrismaClient } from '../prisma/prisma.service';
+import { getRequestContext } from '../common/context/request-context';
 import {
   renderRemittancePdf, renderPayrollSummaryPdf, renderLoanBookPdf, renderSeveranceRegisterPdf,
   renderAdjustmentsRegisterPdf,
@@ -174,8 +175,18 @@ export class ReportsService {
     return { total, active: byStatus.ACTIVE, byStatus, activeByDepartment };
   }
 
+  /**
+   * Organization is deliberately NOT auto-scoped by the tenant extension (it
+   * IS the tenant — see docs/spine.md), so this needs an explicit id filter
+   * unlike every other query in this file. None of this service's methods
+   * currently thread an actor/orgId through, so this reads it from the
+   * ambient request context directly — mirrors employees.service.ts's
+   * numberingPreview(), the established pattern for that exact situation.
+   */
   private async employerName(): Promise<string> {
+    const orgId = getRequestContext().organizationId;
     const org = (await this.prisma.organization.findFirst({
+      where: { id: orgId },
       select: { name: true },
     } as never)) as unknown as { name: string } | null;
     return org?.name ?? '';

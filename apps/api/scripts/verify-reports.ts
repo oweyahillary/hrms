@@ -8,6 +8,9 @@
  *   cd apps/api && npx ts-node scripts/verify-reports.ts
  */
 import 'dotenv/config';
+import { inflateSync } from 'node:zlib';
+import { createPrismaClient, baseClientOf } from '../src/prisma/prisma.service';
+import { PasswordService } from '../src/auth/password.service';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3000/api';
 const YEAR = 2098;
@@ -20,6 +23,47 @@ function check(label: string, ok: boolean, detail = ''): void {
   else { console.log(`  FAIL  ${label}${detail ? ` — ${detail}` : ''}`); fail += 1; }
 }
 const near = (a: number, b: number): boolean => Math.abs(a - b) < 0.01;
+
+/**
+ * Recover readable text from a pdfkit-generated PDF, without a PDF-parsing
+ * dependency. reports-document.ts only ever uses pdfkit's standard 14 fonts
+ * (Helvetica/Helvetica-Bold) — never embedded/subsetted custom fonts — so
+ * pdfkit shows text as hex-encoded strings in Tj/TJ operators where each
+ * byte IS the character's Latin1 code (no custom glyph re-mapping to
+ * undo). Content streams are Flate-compressed by default; inflate each one
+ * and walk each Tj/TJ text-showing call in turn.
+ *
+ * A TJ array kerns by splitting ONE run across several hex tokens with
+ * numeric offsets between them (e.g. "Employer" can come out as
+ * <456d706c6f79> <6572> with a kern number in between) — those fragments
+ * get concatenated with NO separator. A space is added only BETWEEN
+ * separate Tj/TJ calls, which is where a real word/line break lives.
+ */
+function extractPdfText(buf: Buffer): string {
+  const raw = buf.toString('latin1');
+  const streamRe = /<<([^>]*?)>>\s*stream\r?\n([\s\S]*?)\r?\nendstream/g;
+  const runs: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = streamRe.exec(raw))) {
+    if (!/FlateDecode/.test(m[1])) continue;
+    let inflated: string;
+    try { inflated = inflateSync(Buffer.from(m[2], 'latin1')).toString('latin1'); } catch { continue; }
+    const opRe = /\[((?:<[0-9A-Fa-f]+>|[^\]])*)\]\s*TJ|<([0-9A-Fa-f]+)>\s*Tj/g;
+    let om: RegExpExecArray | null;
+    while ((om = opRe.exec(inflated))) {
+      const body = om[1] !== undefined ? om[1] : `<${om[2]}>`;
+      const hexRe = /<([0-9A-Fa-f]+)>/g;
+      let hm: RegExpExecArray | null;
+      let s = '';
+      while ((hm = hexRe.exec(body))) {
+        const hex = hm[1];
+        for (let i = 0; i < hex.length - 1; i += 2) s += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16));
+      }
+      if (s) runs.push(s);
+    }
+  }
+  return runs.join(' ');
+}
 
 interface Summary {
   employeesPaid: number; grossPay: number; paye: number;
@@ -219,6 +263,66 @@ async function main(): Promise<void> {
     check(`${path} PDF downloads as a valid file`,
       res.status === 200 && bytes.subarray(0, 4).toString('latin1') === '%PDF' && bytes.length > 1000,
       `status=${res.status} bytes=${bytes.length}`);
+  }
+
+  // ------------------------------------------------------------------
+  // Cross-tenant employer-name isolation: employerName() used to read
+  // Organization.findFirst() with NO where clause — whichever org happened
+  // to sort first stamped its name (and, on the P9 card, its KRA PIN) onto
+  // EVERY org's PDFs. Prove the fix by rendering a report for a throwaway
+  // org B (zero payroll data — payrollSummary()/statutoryRemittance() both
+  // degrade gracefully to zeros, so no fixture is needed) and reading the
+  // org name straight out of the PDF bytes, both directions.
+  // ------------------------------------------------------------------
+  const orgABranding = (await (await fetch(`${BASE}/organization/branding`, { headers: auth })).json()) as { name: string };
+  const orgAName = orgABranding.name;
+
+  const prisma = createPrismaClient();
+  const base = baseClientOf(prisma) as any;
+  const passwords = new PasswordService();
+  const orgBName = `Employer Probe Co ${stamp}`;
+  const orgB = await base.organization.create({ data: { name: orgBName } });
+  const roleB = await base.role.create({ data: { organizationId: orgB.id, name: 'Admin', permissions: { all: true } } });
+  const orgBAdminEmail = `reports.b.admin.${stamp}@example.com`;
+  const orgBAdminPassword = 'OrgBAdmin123!';
+  const orgBAdminUser = await base.user.create({
+    data: {
+      organizationId: orgB.id, email: orgBAdminEmail,
+      passwordHash: await passwords.hash(orgBAdminPassword),
+      mustChangePassword: false, roleId: roleB.id,
+    },
+  });
+
+  try {
+    const loginB = await fetch(`${BASE}/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: orgBAdminEmail, password: orgBAdminPassword }),
+    });
+    const tokenB = ((await loginB.json()) as { accessToken?: string }).accessToken;
+    if (!tokenB) { console.log('  FAIL  login as org B admin'); process.exit(1); }
+    const authB = { Authorization: `Bearer ${tokenB}` };
+
+    const pdfBRes = await fetch(`${BASE}/reports/payroll-summary/pdf?year=${YEAR}&month=${MONTH}`, { headers: authB });
+    const pdfBText = extractPdfText(Buffer.from(await pdfBRes.arrayBuffer()));
+    check('org B\'s report PDF carries ITS OWN org name', pdfBText.includes(orgBName), pdfBText.slice(0, 120));
+    check('org B\'s report PDF does NOT carry org A\'s name', !pdfBText.includes(orgAName), pdfBText.slice(0, 120));
+
+    // Bidirectional: org A's own PDF, regenerated AFTER org B was created,
+    // must still carry ITS OWN name — proves this isn't a one-way accident
+    // of row-creation order (the bug was "whichever org sorts first wins").
+    const pdfARes = await fetch(`${BASE}/reports/payroll-summary/pdf?year=${YEAR}&month=${MONTH}`, { headers: auth });
+    const pdfAText = extractPdfText(Buffer.from(await pdfARes.arrayBuffer()));
+    check('org A\'s report PDF still carries ITS OWN name after org B was created', pdfAText.includes(orgAName), pdfAText.slice(0, 120));
+    check('org A\'s report PDF does NOT carry org B\'s name', !pdfAText.includes(orgBName), pdfAText.slice(0, 120));
+  } finally {
+    // Organization itself is never deleted once real auth activity (a
+    // login, here) has touched it — see verify-self-service.ts /
+    // verify-attendance-ui.ts for the same rationale. No payroll fixture was
+    // created for org B, so there's nothing else to unwind.
+    await base.session.deleteMany({ where: { userId: orgBAdminUser.id } }).catch(() => undefined);
+    await base.user.deleteMany({ where: { organizationId: orgB.id } }).catch(() => undefined);
+    await base.role.deleteMany({ where: { organizationId: orgB.id } }).catch(() => undefined);
+    await (prisma as any).$disconnect?.();
   }
 
   console.log(`\n  ${pass} passed, ${fail} failed`);
