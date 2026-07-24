@@ -609,9 +609,10 @@ export function PayrollRunDetailPage() {
             <Table.Tbody>
               {run.payslips.map((p) => {
                 const info = empLabel(p.employeeId);
-                const bonusLines = p.adjustments
-                  .filter((a) => a.type === 'BONUS')
-                  .map((a) => `+${kes(a.amount)} — ${a.reason ?? 'Bonus'}`);
+                const grossLines = [
+                  ...p.adjustments.filter((a) => a.type === 'BONUS').map((a) => `+${kes(a.amount)} — ${a.reason ?? 'Bonus'}`),
+                  ...p.overtime.map((o) => `+${kes(o.amount)} — Overtime ${o.hours}h (${o.category.replace('_', ' ').toLowerCase()}, ${o.date.slice(0, 10)})`),
+                ];
                 const deductionLines = [
                   ...p.loanRepayments.map((r) => {
                     if (r.amount === 0 && r.deferredAmount > 0) {
@@ -630,7 +631,7 @@ export function PayrollRunDetailPage() {
                       <Text size="sm" fw={600}>{info.name}</Text>
                       <Text size="xs" c="sand.6" ff="monospace">{info.number}</Text>
                     </Table.Td>
-                    <Table.Td><BreakdownText value={kes(p.grossPay)} lines={bonusLines} /></Table.Td>
+                    <Table.Td><BreakdownText value={kes(p.grossPay)} lines={grossLines} /></Table.Td>
                     <Table.Td><Text size="sm">{kes(p.paye)}</Text></Table.Td>
                     <Table.Td><Text size="sm">{kes(p.nssfEmployee)}</Text></Table.Td>
                     <Table.Td><Text size="sm">{kes(p.shif)}</Text></Table.Td>

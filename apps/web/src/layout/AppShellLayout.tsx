@@ -5,7 +5,7 @@ import {
 } from '@mantine/core';
 import {
   IconLayoutDashboard, IconUsers, IconCalendarStats, IconReportMoney, IconChevronDown, IconLogout,
-  IconSettings, IconReceipt2, IconUserCircle, IconUser, IconClockHour4, IconClipboardCheck,
+  IconSettings, IconReceipt2, IconUserCircle, IconUser, IconClockHour4, IconClipboardCheck, IconClockPlus,
 } from '@tabler/icons-react';
 import type { Icon } from '@tabler/icons-react';
 import { useAuth } from '../auth/AuthContext';
@@ -59,6 +59,7 @@ const HR_NAV: NavItem[] = [
   },
   { to: '/shifts', label: 'Shifts', icon: IconClockHour4 },
   { to: '/attendance', label: 'Attendance', icon: IconClipboardCheck },
+  { to: '/overtime', label: 'Overtime', icon: IconClockPlus },
 ];
 
 /**
@@ -85,6 +86,7 @@ const SELF_SERVICE_NAV: NavItem[] = [
     ],
   },
   { to: '/me/attendance', label: 'My attendance', icon: IconClipboardCheck },
+  { to: '/me/overtime', label: 'My overtime', icon: IconClockPlus },
   { to: '/me/profile', label: 'My profile', icon: IconUserCircle },
 ];
 
@@ -98,6 +100,7 @@ const MY_SPACE_NAV: NavItem[] = [
       { to: '/me/leave', label: 'My leave', exact: true },
       { to: '/leave/apply', label: 'Apply for leave' },
       { to: '/me/attendance', label: 'My attendance' },
+      { to: '/me/overtime', label: 'My overtime' },
       { to: '/me/profile', label: 'My profile' },
     ],
   },
@@ -127,6 +130,7 @@ const ADMIN_NAV: NavItem[] = [
       { to: '/settings/payroll', label: 'Payroll' },
       { to: '/settings/shifts', label: 'Shift definitions' },
       { to: '/settings/devices', label: 'Devices' },
+      { to: '/settings/overtime', label: 'Overtime policy' },
       { to: '/settings/users', label: 'Users' },
     ],
   },

@@ -40,6 +40,9 @@ import { SettingsShiftsPage } from './pages/SettingsShiftsPage';
 import { SettingsDevicesPage } from './pages/SettingsDevicesPage';
 import { AttendancePage } from './pages/AttendancePage';
 import { MyAttendancePage } from './pages/MyAttendancePage';
+import { OvertimePage } from './pages/OvertimePage';
+import { SettingsOvertimePage } from './pages/SettingsOvertimePage';
+import { MyOvertimePage } from './pages/MyOvertimePage';
 
 export function App() {
   return (
@@ -65,6 +68,7 @@ export function App() {
                 <Route path="/leave/types" element={<RequireRole check={canManageEmployees}><LeaveTypesPage /></RequireRole>} />
                 <Route path="/shifts" element={<RequireRole check={canManageEmployees}><ShiftsPage /></RequireRole>} />
                 <Route path="/attendance" element={<RequireRole check={canManageEmployees}><AttendancePage /></RequireRole>} />
+                <Route path="/overtime" element={<RequireRole check={canManageEmployees}><OvertimePage /></RequireRole>} />
                 <Route path="/payroll" element={<RequireRole check={canManageEmployees}><PayrollLayout /></RequireRole>}>
                   <Route index element={<PayrollRunsPage />} />
                   <Route path="new" element={<PayrollRunCreatePage />} />
@@ -83,12 +87,14 @@ export function App() {
                 <Route path="/settings/payroll" element={<RequireRole check={canManageOrg}><SettingsPayrollPage /></RequireRole>} />
                 <Route path="/settings/shifts" element={<RequireRole check={canManageOrg}><SettingsShiftsPage /></RequireRole>} />
                 <Route path="/settings/devices" element={<RequireRole check={canManageOrg}><SettingsDevicesPage /></RequireRole>} />
+                <Route path="/settings/overtime" element={<RequireRole check={canManageOrg}><SettingsOvertimePage /></RequireRole>} />
                 <Route path="/settings/users" element={<RequireRole check={canManageOrg}><UsersPage /></RequireRole>} />
                 <Route path="/settings/users/new" element={<RequireRole check={canManageOrg}><InviteUserPage /></RequireRole>} />
                 <Route path="/me/payslips" element={<MyPayslipsPage />} />
                 <Route path="/me/leave" element={<MyLeavePage />} />
                 <Route path="/me/profile" element={<MyProfilePage />} />
                 <Route path="/me/attendance" element={<MyAttendancePage />} />
+                <Route path="/me/overtime" element={<MyOvertimePage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </AppShellLayout>
