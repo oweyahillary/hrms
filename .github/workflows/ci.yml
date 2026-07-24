@@ -217,6 +217,10 @@ jobs:
           npx ts-node scripts/verify-attendance-ui.ts
           echo "::endgroup::"
 
+          echo "::group::verify device-push"
+          npx ts-node scripts/verify-device-push.ts
+          echo "::endgroup::"
+
       - name: API logs on failure
         if: failure()
         run: cat /tmp/api.log || true
