@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PRISMA, type ExtendedPrismaClient } from '../prisma/prisma.service';
+import { getRequestContext } from '../common/context/request-context';
 import { CryptoService } from '../crypto/crypto.service';
 import { StatutoryRatesService } from './statutory-rates.service';
 import { assembleRateSet } from './rate-set';
@@ -39,7 +40,12 @@ export class P9Service {
     } as never)) as unknown as EmpRow | null;
     if (!emp) throw new NotFoundException('Employee not found');
 
+    // Organization is deliberately NOT auto-scoped by the tenant extension
+    // (it IS the tenant — see docs/spine.md); this is a statutory document
+    // (KRA P9 card), so stamping the wrong org's name/PIN on it once a
+    // second org exists is a correctness bug, not just a cosmetic one.
     const org = (await this.prisma.organization.findFirst({
+      where: { id: getRequestContext().organizationId },
       select: { name: true, kraPin: true },
     } as never)) as unknown as OrgRow | null;
 
