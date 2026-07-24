@@ -4,10 +4,7 @@ import { StatutoryRatesService } from './statutory-rates.service';
 import { CreateStatutoryRateDto } from './dto/create-statutory-rate.dto';
 import { UpdateStatutoryRateDto } from './dto/update-statutory-rate.dto';
 import { EffectiveQueryDto, QueryStatutoryRateDto } from './dto/query-statutory-rate.dto';
-import { Roles } from '../auth/decorators/roles.decorator';
-
-// National rates: only the top role may change them; anyone authenticated may read.
-const ADMIN = ['Admin'];
+import { Permissions } from '../auth/decorators/permissions.decorator';
 
 @ApiTags('statutory-rates')
 @ApiBearerAuth()
@@ -15,7 +12,7 @@ const ADMIN = ['Admin'];
 export class StatutoryRatesController {
   constructor(private readonly rates: StatutoryRatesService) {}
 
-  @Post() @Roles(...ADMIN)
+  @Post() @Permissions('statutory_rates.manage')
   create(@Body() dto: CreateStatutoryRateDto) { return this.rates.create(dto); }
 
   @Get()
@@ -25,9 +22,9 @@ export class StatutoryRatesController {
   @Get('effective')
   effective(@Query() query: EffectiveQueryDto) { return this.rates.effective(query.asOf); }
 
-  @Patch(':id') @Roles(...ADMIN)
+  @Patch(':id') @Permissions('statutory_rates.manage')
   update(@Param('id') id: string, @Body() dto: UpdateStatutoryRateDto) { return this.rates.update(id, dto); }
 
-  @Delete(':id') @Roles(...ADMIN)
+  @Delete(':id') @Permissions('statutory_rates.manage')
   remove(@Param('id') id: string) { return this.rates.remove(id); }
 }

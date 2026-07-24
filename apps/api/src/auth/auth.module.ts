@@ -11,7 +11,7 @@ import { OidcController } from './oidc.controller';
 import { OidcService } from './oidc.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { PasswordChangeGuard } from './guards/password-change.guard';
-import { RolesGuard } from './guards/roles.guard';
+import { PermissionsGuard } from './guards/permissions.guard';
 
 @Module({
   imports: [
@@ -27,10 +27,10 @@ import { RolesGuard } from './guards/roles.guard';
     JwtStrategy,
     OidcService,
     // Order matters: authenticate first, then block if a password change is
-    // owed, then authorize by role.
+    // owed, then authorize by permission.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PasswordChangeGuard },
-    { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: PermissionsGuard },
   ],
   exports: [PasswordService, TokensService],
 })

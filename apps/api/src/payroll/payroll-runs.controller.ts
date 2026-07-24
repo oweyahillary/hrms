@@ -4,8 +4,7 @@ import { PayrollRunsService } from './payroll-runs.service';
 import { PayslipPdfService } from './payslip-pdf.service';
 import { CreatePayrollRunDto } from './dto/create-payroll-run.dto';
 import { CreateCorrectionDto } from './dto/create-correction.dto';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
+import { Permissions } from '../auth/decorators/permissions.decorator';
 
 @ApiTags('payroll-runs')
 @ApiBearerAuth()
@@ -16,18 +15,18 @@ export class PayrollRunsController {
     private readonly pdf: PayslipPdfService,
   ) {}
 
-  @Post() @Roles(...HR_MANAGEMENT_ROLES)
+  @Post() @Permissions('payroll.run')
   create(@Body() dto: CreatePayrollRunDto, @Query('__faultInject') faultInject?: string) {
     return this.runs.create(dto, faultInject);
   }
 
-  @Get() @Roles(...HR_MANAGEMENT_ROLES)
+  @Get() @Permissions('payroll.run')
   list() { return this.runs.list(); }
 
-  @Get(':id') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get(':id') @Permissions('payroll.run')
   findOne(@Param('id') id: string) { return this.runs.findOne(id); }
 
-  @Post(':id/finalize') @Roles(...HR_MANAGEMENT_ROLES)
+  @Post(':id/finalize') @Permissions('payroll.finalize')
   finalize(
     @Param('id') id: string,
     @Query('override') override?: string,
@@ -38,22 +37,22 @@ export class PayrollRunsController {
     return this.runs.finalize(id, override === 'true', skipPdf === 'true');
   }
 
-  @Post(':id/correction') @Roles(...HR_MANAGEMENT_ROLES)
+  @Post(':id/correction') @Permissions('payroll.run')
   correction(@Param('id') id: string, @Body() dto: CreateCorrectionDto) {
     return this.runs.createCorrection(id, dto);
   }
 
-  @Delete(':id') @Roles(...HR_MANAGEMENT_ROLES)
+  @Delete(':id') @Permissions('payroll.run')
   remove(@Param('id') id: string) { return this.runs.remove(id); }
 
   // Idempotent retry: (re)render any payslip PDFs not yet READY for this run.
-  @Post(':id/payslips/pdf') @Roles(...HR_MANAGEMENT_ROLES)
+  @Post(':id/payslips/pdf') @Permissions('payroll.run')
   generatePdfs(@Param('id') id: string) {
     return this.pdf.generateMissingForRun(id);
   }
 
   // Download a single payslip's PDF.
-  @Get(':id/payslips/:pid/pdf') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get(':id/payslips/:pid/pdf') @Permissions('payroll.run')
   async downloadPayslipPdf(
     @Param('id') id: string,
     @Param('pid') pid: string,

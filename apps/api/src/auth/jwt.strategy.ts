@@ -21,6 +21,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       userId: payload.sub,
       organizationId: payload.org,
       role: payload.role,
+      permissions: payload.perms ?? [],
       mustChangePassword: payload.mcp === true,
     };
   }

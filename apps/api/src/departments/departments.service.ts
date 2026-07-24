@@ -8,7 +8,7 @@ import type { UpdateDepartmentDto } from './dto/update-department.dto';
 
 interface DeptRow {
   id: string; name: string; parentDepartmentId: string | null;
-  headEmployeeId: string | null;
+  headEmployeeId: string | null; active: boolean;
   createdAt: Date; updatedAt: Date;
   _count?: { employees: number; subDepartments: number };
 }
@@ -42,9 +42,10 @@ export class DepartmentsService {
     if (!emp) throw new BadRequestException('headEmployeeId does not exist');
   }
 
-  async list() {
+  async list(includeInactive = false) {
+    const where: Record<string, unknown> = includeInactive ? {} : { active: true };
     const rows = (await this.prisma.department.findMany({
-      orderBy: { name: 'asc' }, include: withCounts,
+      where: where as never, orderBy: { name: 'asc' }, include: withCounts,
     })) as unknown as DeptRow[];
     return rows.map((r) => this.toResponse(r));
   }
@@ -71,6 +72,7 @@ export class DepartmentsService {
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.parentDepartmentId !== undefined) data.parentDepartmentId = dto.parentDepartmentId;
     if (dto.headEmployeeId !== undefined) data.headEmployeeId = dto.headEmployeeId;
+    if (dto.active !== undefined) data.active = dto.active;
 
     const row = (await this.prisma.department.update({
       where: { id }, data: data as never, include: withCounts,
@@ -78,10 +80,21 @@ export class DepartmentsService {
     return this.toResponse(row);
   }
 
+  /**
+   * Blocked (not cascaded) while ANY employee is still assigned — deactivate
+   * instead. Employee.departmentId has onDelete: SetNull at the DB level, so
+   * without this check a delete would silently detach every employee in the
+   * department rather than refuse; that's the opposite of what "delete a
+   * department" should mean for a directory people are actively assigned to.
+   */
   async remove(id: string) {
-    await this.ensureExists(id);
+    const row = await this.get(id);
+    if (row.employeeCount > 0) {
+      throw new ConflictException(
+        `${row.employeeCount} employee(s) are still assigned to this department — reassign or deactivate it instead.`,
+      );
+    }
     try {
-      // Employees' departmentId is set null (schema onDelete: SetNull).
       await this.prisma.department.delete({ where: { id } });
       return { success: true };
     } catch (err) {
@@ -118,6 +131,7 @@ export class DepartmentsService {
       name: row.name,
       parentDepartmentId: row.parentDepartmentId,
       headEmployeeId: row.headEmployeeId,
+      active: row.active,
       employeeCount: row._count?.employees ?? 0,
       subDepartmentCount: row._count?.subDepartments ?? 0,
       createdAt: row.createdAt,

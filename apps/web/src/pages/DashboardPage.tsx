@@ -14,7 +14,7 @@ import type { LeaveBalance } from '../api/leave';
 import { ErrorCard } from '../components/ErrorCard';
 import { kes } from '../utils/money';
 import { useAuth } from '../auth/AuthContext';
-import { canManageEmployees } from '../auth/roles';
+import { isHrCapable } from '../auth/permissions';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -88,7 +88,7 @@ interface HrData {
 
 export function DashboardPage() {
   const { user } = useAuth();
-  const isHr = canManageEmployees(user?.role);
+  const isHr = isHrCapable(user?.permissions);
 
   const [hrData, setHrData] = useState<HrData | null>(null);
   const [myPayslips, setMyPayslips] = useState<MyPayslip[] | null>(null);

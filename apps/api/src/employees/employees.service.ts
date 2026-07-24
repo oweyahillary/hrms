@@ -10,6 +10,8 @@ import { isPiiPrivileged, presentPii } from './employee-pii';
 import { EMPLOYEE_ANON_MARKER } from './anonymization';
 import { formatEmployeeNumber } from './employee-number';
 import { getRequestContext } from '../common/context/request-context';
+import { ROLE_PERMISSION_DEFAULTS } from '../auth/permissions';
+import type { AuthUser } from '../auth/decorators/current-user.decorator';
 import type { CreateEmployeeDto } from './dto/create-employee.dto';
 import type { UpdateEmployeeDto } from './dto/update-employee.dto';
 import type { TerminateEmployeeDto } from './dto/terminate-employee.dto';
@@ -137,7 +139,7 @@ export class EmployeesService {
     );
   }
 
-  async create(dto: CreateEmployeeDto, actorRole: string) {
+  async create(dto: CreateEmployeeDto, actor: AuthUser) {
     // An explicit number always wins (needed when migrating staff who already
     // have one); auto-numbering only fills the gap when it's omitted.
     const employeeNumber = dto.employeeNumber?.trim()
@@ -174,7 +176,7 @@ export class EmployeesService {
       const row = (await this.prisma.employee.create({
         data: data as unknown as Prisma.EmployeeUncheckedCreateInput,
       })) as unknown as EmployeeRow;
-      return this.toResponse(row, actorRole);
+      return this.toResponse(row, actor);
     } catch (err) {
       if ((err as { code?: string }).code === 'P2002') {
         throw new ConflictException('employeeNumber already exists');
@@ -221,29 +223,34 @@ export class EmployeesService {
     };
   }
 
-  async get(id: string, actorRole: string) {
+  async get(id: string, actor: AuthUser) {
     // findFirst (not findUnique) so the tenant extension scopes by org.
     const row = (await this.prisma.employee.findFirst({
       where: { id },
       include: { user: { select: { email: true, isActive: true, role: { select: { name: true } } } } },
     })) as unknown as EmployeeRow | null;
     if (!row) throw new NotFoundException('Employee not found');
-    return this.toResponse(row, actorRole);
+    return this.toResponse(row, actor);
   }
 
   /**
    * Provision a login for an existing employee. Granting the 'Admin' role is
-   * restricted to Admin actors — everything else in HR_MANAGEMENT_ROLES can
-   * hand out the rest. Roles are resolved-or-created by name because only
-   * 'Admin' is ever actually seeded (see apps/api/scripts/seed.ts) — the same
-   * pattern seed.ts itself uses.
+   * restricted to actors who ARE (by name) an Admin — a deliberate, narrow
+   * exception left name-based rather than permission-based: even a
+   * permission system needs some root bootstrap identity below which pure
+   * RBAC operates, and a custom role granted every other permission still
+   * should not be able to mint new Admins. Everything else can hand out the
+   * rest. Roles are resolved-or-created by name because only 'Admin' is ever
+   * actually seeded (see apps/api/scripts/seed.ts) — the same pattern
+   * seed.ts itself uses; a newly-created role is backfilled with the same
+   * permission set ROLE_PERMISSION_DEFAULTS would give it, not left empty.
    *
    * There is no email infrastructure in this app: the temporary password is
    * returned once in the response body, the same precedent as MFA backup
    * codes (AuthService.enableMfa). It cannot be retrieved again — only reset.
    */
-  async createLogin(employeeId: string, dto: CreateLoginDto, actorRole: string) {
-    if (dto.roleName === 'Admin' && actorRole !== 'Admin') {
+  async createLogin(employeeId: string, dto: CreateLoginDto, actor: AuthUser) {
+    if (dto.roleName === 'Admin' && actor.role !== 'Admin') {
       throw new ForbiddenException('Only an Admin can grant the Admin role');
     }
 
@@ -255,7 +262,7 @@ export class EmployeesService {
       where: { name: dto.roleName },
     })) as unknown as { id: string } | null;
     role ??= (await this.prisma.role.create({
-      data: { name: dto.roleName, permissions: dto.roleName === 'Admin' ? { all: true } : {} } as never,
+      data: { name: dto.roleName, permissions: [...(ROLE_PERMISSION_DEFAULTS[dto.roleName] ?? [])] } as never,
     })) as unknown as { id: string };
 
     const temporaryPassword = this.passwords.generateTempPassword();
@@ -283,16 +290,16 @@ export class EmployeesService {
   }
 
   /** Find an employee by raw national ID using the blind index (no plaintext scan). */
-  async lookupByNationalId(nationalId: string, actorRole: string) {
+  async lookupByNationalId(nationalId: string, actor: AuthUser) {
     const hmac = this.crypto.blindIndex(nationalId);
     const row = (await this.prisma.employee.findFirst({
       where: { nationalIdHmac: hmac },
     })) as unknown as EmployeeRow | null;
     if (!row) throw new NotFoundException('Employee not found');
-    return this.toResponse(row, actorRole);
+    return this.toResponse(row, actor);
   }
 
-  async update(id: string, dto: UpdateEmployeeDto, actorRole: string) {
+  async update(id: string, dto: UpdateEmployeeDto, actor: AuthUser) {
     // Scoped read first (update-by-id isn't org-injected — see docs/spine.md).
     await this.ensureExists(id);
 
@@ -337,7 +344,7 @@ export class EmployeesService {
         where: { id },
         data: data as unknown as Prisma.EmployeeUncheckedUpdateInput,
       })) as unknown as EmployeeRow;
-      return this.toResponse(row, actorRole);
+      return this.toResponse(row, actor);
     } catch (err) {
       if ((err as { code?: string }).code === 'P2002') {
         throw new ConflictException('employeeNumber already exists');
@@ -346,7 +353,7 @@ export class EmployeesService {
     }
   }
 
-  async terminate(id: string, dto: TerminateEmployeeDto, actorRole: string) {
+  async terminate(id: string, dto: TerminateEmployeeDto, actor: AuthUser) {
     await this.ensureExists(id);
     const row = (await this.prisma.employee.update({
       where: { id },
@@ -355,7 +362,7 @@ export class EmployeesService {
         exitDate: dto.exitDate ? new Date(dto.exitDate) : new Date(),
       },
     })) as unknown as EmployeeRow;
-    return this.toResponse(row, actorRole);
+    return this.toResponse(row, actor);
   }
 
   /**
@@ -412,9 +419,9 @@ export class EmployeesService {
     if (!row) throw new NotFoundException('Employee not found');
   }
 
-  /** Decrypt PII server-side, then expose full or masked values per role. */
-  private async toResponse(row: EmployeeRow, actorRole: string) {
-    const privileged = isPiiPrivileged(actorRole);
+  /** Decrypt PII server-side, then expose full or masked values per the caller's permissions. */
+  private async toResponse(row: EmployeeRow, actor: AuthUser) {
+    const privileged = isPiiPrivileged(actor.permissions);
     const nationalId = await this.crypto.decrypt(row.nationalId);
     const kraPin = row.kraPin ? await this.crypto.decrypt(row.kraPin) : null;
     const bankAccountNumber = row.bankAccountNumber ? await this.crypto.decrypt(row.bankAccountNumber) : null;

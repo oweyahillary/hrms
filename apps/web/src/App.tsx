@@ -1,7 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { RequireAuth } from './auth/RequireAuth';
-import { RequireRole } from './auth/RequireRole';
-import { canManageEmployees, canManageOrg } from './auth/roles';
+import { RequirePermission } from './auth/RequirePermission';
 import { AppShellLayout } from './layout/AppShellLayout';
 import { LoginPage } from './pages/LoginPage';
 import { SsoCallbackPage } from './pages/SsoCallbackPage';
@@ -30,6 +29,8 @@ import { SettingsPage } from './pages/SettingsPage';
 import { SettingsLeavePage } from './pages/SettingsLeavePage';
 import { SettingsNumberingPage } from './pages/SettingsNumberingPage';
 import { SettingsPayrollPage } from './pages/SettingsPayrollPage';
+import { SettingsDepartmentsPage } from './pages/SettingsDepartmentsPage';
+import { SettingsRolesPage } from './pages/SettingsRolesPage';
 import { UsersPage } from './pages/UsersPage';
 import { InviteUserPage } from './pages/InviteUserPage';
 import { MyPayslipsPage } from './pages/MyPayslipsPage';
@@ -40,6 +41,12 @@ import { SettingsShiftsPage } from './pages/SettingsShiftsPage';
 import { SettingsDevicesPage } from './pages/SettingsDevicesPage';
 import { AttendancePage } from './pages/AttendancePage';
 import { MyAttendancePage } from './pages/MyAttendancePage';
+
+const PAYROLL_PERMS = ['payroll.run', 'payroll.finalize', 'payroll.manage'];
+const SETTINGS_PERMS = [
+  'settings.manage', 'users.manage', 'org_structure.manage', 'shifts.manage',
+  'attendance.manage', 'statutory_rates.manage', 'compliance.manage',
+];
 
 export function App() {
   return (
@@ -54,18 +61,18 @@ export function App() {
             <AppShellLayout>
               <Routes>
                 <Route path="/" element={<DashboardPage />} />
-                <Route path="/employees" element={<RequireRole check={canManageEmployees}><EmployeesPage /></RequireRole>} />
-                <Route path="/employees/new" element={<RequireRole check={canManageEmployees}><EmployeeCreatePage /></RequireRole>} />
-                <Route path="/employees/:id" element={<RequireRole check={canManageEmployees}><EmployeeDetailPage /></RequireRole>} />
-                <Route path="/employees/:id/edit" element={<RequireRole check={canManageEmployees}><EmployeeEditPage /></RequireRole>} />
-                <Route path="/leave" element={<RequireRole check={canManageEmployees}><LeavePage /></RequireRole>} />
-                {/* Shared: linked from both the HR "Leave" section and everyone's "My Leave" — not role-gated. */}
+                <Route path="/employees" element={<RequirePermission permission="employees.write"><EmployeesPage /></RequirePermission>} />
+                <Route path="/employees/new" element={<RequirePermission permission="employees.write"><EmployeeCreatePage /></RequirePermission>} />
+                <Route path="/employees/:id" element={<RequirePermission permission="employees.write"><EmployeeDetailPage /></RequirePermission>} />
+                <Route path="/employees/:id/edit" element={<RequirePermission permission="employees.write"><EmployeeEditPage /></RequirePermission>} />
+                <Route path="/leave" element={<RequirePermission permission="leave.manage"><LeavePage /></RequirePermission>} />
+                {/* Shared: linked from both the HR "Leave" section and everyone's "My Leave" — not permission-gated. */}
                 <Route path="/leave/apply" element={<LeaveApplyPage />} />
-                <Route path="/leave/balances" element={<RequireRole check={canManageEmployees}><LeaveBalancesPage /></RequireRole>} />
-                <Route path="/leave/types" element={<RequireRole check={canManageEmployees}><LeaveTypesPage /></RequireRole>} />
-                <Route path="/shifts" element={<RequireRole check={canManageEmployees}><ShiftsPage /></RequireRole>} />
-                <Route path="/attendance" element={<RequireRole check={canManageEmployees}><AttendancePage /></RequireRole>} />
-                <Route path="/payroll" element={<RequireRole check={canManageEmployees}><PayrollLayout /></RequireRole>}>
+                <Route path="/leave/balances" element={<RequirePermission permission="leave.manage"><LeaveBalancesPage /></RequirePermission>} />
+                <Route path="/leave/types" element={<RequirePermission permission="leave.manage"><LeaveTypesPage /></RequirePermission>} />
+                <Route path="/shifts" element={<RequirePermission permission="shifts.manage"><ShiftsPage /></RequirePermission>} />
+                <Route path="/attendance" element={<RequirePermission permission="attendance.manage"><AttendancePage /></RequirePermission>} />
+                <Route path="/payroll" element={<RequirePermission permission={PAYROLL_PERMS}><PayrollLayout /></RequirePermission>}>
                   <Route index element={<PayrollRunsPage />} />
                   <Route path="new" element={<PayrollRunCreatePage />} />
                   <Route path="preview" element={<PayrollPreviewPage />} />
@@ -77,14 +84,16 @@ export function App() {
                   <Route path="reports" element={<ReportsPage />} />
                   <Route path=":id" element={<PayrollRunDetailPage />} />
                 </Route>
-                <Route path="/settings" element={<RequireRole check={canManageOrg}><SettingsPage /></RequireRole>} />
-                <Route path="/settings/leave" element={<RequireRole check={canManageOrg}><SettingsLeavePage /></RequireRole>} />
-                <Route path="/settings/numbering" element={<RequireRole check={canManageOrg}><SettingsNumberingPage /></RequireRole>} />
-                <Route path="/settings/payroll" element={<RequireRole check={canManageOrg}><SettingsPayrollPage /></RequireRole>} />
-                <Route path="/settings/shifts" element={<RequireRole check={canManageOrg}><SettingsShiftsPage /></RequireRole>} />
-                <Route path="/settings/devices" element={<RequireRole check={canManageOrg}><SettingsDevicesPage /></RequireRole>} />
-                <Route path="/settings/users" element={<RequireRole check={canManageOrg}><UsersPage /></RequireRole>} />
-                <Route path="/settings/users/new" element={<RequireRole check={canManageOrg}><InviteUserPage /></RequireRole>} />
+                <Route path="/settings" element={<RequirePermission permission={SETTINGS_PERMS}><SettingsPage /></RequirePermission>} />
+                <Route path="/settings/leave" element={<RequirePermission permission="settings.manage"><SettingsLeavePage /></RequirePermission>} />
+                <Route path="/settings/numbering" element={<RequirePermission permission="settings.manage"><SettingsNumberingPage /></RequirePermission>} />
+                <Route path="/settings/payroll" element={<RequirePermission permission="settings.manage"><SettingsPayrollPage /></RequirePermission>} />
+                <Route path="/settings/departments" element={<RequirePermission permission="org_structure.manage"><SettingsDepartmentsPage /></RequirePermission>} />
+                <Route path="/settings/shifts" element={<RequirePermission permission="shifts.manage"><SettingsShiftsPage /></RequirePermission>} />
+                <Route path="/settings/devices" element={<RequirePermission permission="attendance.manage"><SettingsDevicesPage /></RequirePermission>} />
+                <Route path="/settings/users" element={<RequirePermission permission="users.manage"><UsersPage /></RequirePermission>} />
+                <Route path="/settings/users/new" element={<RequirePermission permission="users.manage"><InviteUserPage /></RequirePermission>} />
+                <Route path="/settings/roles" element={<RequirePermission permission="users.manage"><SettingsRolesPage /></RequirePermission>} />
                 <Route path="/me/payslips" element={<MyPayslipsPage />} />
                 <Route path="/me/leave" element={<MyLeavePage />} />
                 <Route path="/me/profile" element={<MyProfilePage />} />

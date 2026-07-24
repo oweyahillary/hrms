@@ -6,12 +6,10 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ShiftRosterService } from './shift-roster.service';
 import { UpsertRosterDto } from './dto/upsert-roster.dto';
 import { QueryRosterDto } from './dto/query-roster.dto';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
+import { Permissions } from '../auth/decorators/permissions.decorator';
 
 interface UploadedFileLike { buffer: Buffer; originalname: string; mimetype: string }
 
-const MANAGE = [...HR_MANAGEMENT_ROLES] as string[];
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
 /** Explicit ?format= wins; otherwise inferred from the upload's mimetype/filename. */
@@ -27,25 +25,25 @@ function resolveFormat(explicit: string | undefined, file: UploadedFileLike): 'c
 export class ShiftRosterController {
   constructor(private readonly roster: ShiftRosterService) {}
 
-  @Get() @Roles(...MANAGE)
+  @Get() @Permissions('shifts.manage')
   get(@Query() query: QueryRosterDto) {
     return this.roster.getRoster(query);
   }
 
-  @Post() @Roles(...MANAGE)
+  @Post() @Permissions('shifts.manage')
   upsert(@Body() dto: UpsertRosterDto) {
     return this.roster.upsert(dto);
   }
 
   @Post('import')
-  @Roles(...MANAGE)
+  @Permissions('shifts.manage')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMPORT_BYTES } }))
   import(@UploadedFile() file: UploadedFileLike, @Query('format') format?: string) {
     return this.roster.importFile(file.buffer, resolveFormat(format, file));
   }
 
   /** Clears a single day's assignment. */
-  @Delete(':id') @Roles(...MANAGE)
+  @Delete(':id') @Permissions('shifts.manage')
   remove(@Param('id') id: string) {
     return this.roster.remove(id);
   }

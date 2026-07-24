@@ -4,9 +4,8 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { BankExportService } from './bank-export.service';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { Permissions } from '../auth/decorators/permissions.decorator';
 import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.decorator';
-import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
 
 type Format = 'CSV' | 'XLSX';
 type Template = 'GENERIC' | 'EFT';
@@ -34,7 +33,7 @@ function parseTemplate(q: string | undefined): Template {
 export class BankExportController {
   constructor(private readonly bank: BankExportService) {}
 
-  @Post(':id/bank-export') @Roles(...HR_MANAGEMENT_ROLES)
+  @Post(':id/bank-export') @Permissions('payroll.manage')
   generate(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
@@ -44,12 +43,12 @@ export class BankExportController {
     return this.bank.generate(id, parseTemplate(template), parseFormats(format), user.userId);
   }
 
-  @Get(':id/bank-exports') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get(':id/bank-exports') @Permissions('payroll.manage')
   list(@Param('id') id: string) {
     return this.bank.list(id);
   }
 
-  @Get(':id/bank-exports/:batchId/download') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get(':id/bank-exports/:batchId/download') @Permissions('payroll.manage')
   async download(
     @Param('id') id: string,
     @Param('batchId') batchId: string,

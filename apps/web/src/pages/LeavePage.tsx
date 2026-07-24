@@ -13,7 +13,7 @@ import {
 import { Link } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import { canManageEmployees } from '../auth/roles';
+import { hasPermission } from '../auth/permissions';
 import { ErrorCard } from '../components/ErrorCard';
 import { formatDate as fmtDate } from '../utils/date';
 
@@ -112,7 +112,7 @@ function RequestRows({
 
 export function LeavePage() {
   const { user } = useAuth();
-  const isHr = canManageEmployees(user?.role);
+  const isHr = hasPermission(user?.permissions, 'leave.manage');
 
   const [tab, setTab] = useState<string | null>('inbox');
   const [status, setStatus] = useState<string | null>(null);

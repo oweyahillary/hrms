@@ -2,8 +2,7 @@ import { BadRequestException, Controller, Get, Query, Res, StreamableFile } from
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { P10Service } from './p10.service';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
+import { Permissions } from '../auth/decorators/permissions.decorator';
 
 function parsePeriod(year?: string, month?: string): { year: number; month: number } {
   const y = Number(year);
@@ -23,7 +22,7 @@ export class P10Controller {
    * KRA P10 Section B (employee details) import CSV for a period, ready to load
    * into P10_Return.xlsm via its "IMPORT CSV" button.
    */
-  @Get() @Roles(...HR_MANAGEMENT_ROLES)
+  @Get() @Permissions('payroll.manage')
   async sheetB(
     @Res({ passthrough: true }) res: Response,
     @Query('year') year?: string,

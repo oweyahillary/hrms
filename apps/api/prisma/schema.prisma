@@ -411,6 +411,10 @@ model Department {
   /// would force BOTH to be explicitly named — renaming a live FK constraint for
   /// a pointer. Existence is validated in the service instead.
   headEmployeeId     String?
+  /// Deactivating hides a department from pickers without breaking history —
+  /// same convention as ShiftDefinition.active. Deleting still requires zero
+  /// employees AND zero sub-departments (see DepartmentsService.remove).
+  active             Boolean  @default(true)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt // [T2]
 

@@ -17,7 +17,7 @@ import { listEmployees, type EmployeeListRow } from '../api/employees';
 import { getMyProfile } from '../api/self-service';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import { canManageEmployees } from '../auth/roles';
+import { hasPermission } from '../auth/permissions';
 import { countWorkingDays, parseDateInput } from '../validation/leave-days';
 
 interface FormValues {
@@ -32,7 +32,7 @@ interface FormValues {
 export function LeaveApplyPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const isHr = canManageEmployees(user?.role);
+  const isHr = hasPermission(user?.permissions, 'leave.manage');
 
   const [employees, setEmployees] = useState<EmployeeListRow[]>([]);
   const [types, setTypes] = useState<LeaveType[]>([]);

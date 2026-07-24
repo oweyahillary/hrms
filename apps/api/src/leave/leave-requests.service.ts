@@ -2,7 +2,7 @@ import {
   BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException,
 } from '@nestjs/common';
 import { PRISMA, type ExtendedPrismaClient } from '../prisma/prisma.service';
-import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
+import { resolveRolePermissions } from '../auth/permissions';
 import type { AuthUser } from '../auth/decorators/current-user.decorator';
 import {
   availableDaysAsOf, carryOverLastUsableDate, countWorkingDays, expiredCarryOverDays, toISODate,
@@ -25,7 +25,8 @@ interface RequestRow {
 }
 
 const num = (v: unknown): number => Number(v ?? 0);
-const isPrivileged = (role: string) => HR_MANAGEMENT_ROLES.includes(role);
+/** "Can act on behalf of others" for leave — the leave.manage permission (formerly: any HR_MANAGEMENT_ROLES name). */
+const isPrivileged = (actor: AuthUser) => actor.permissions.includes('leave.manage');
 
 const requestInclude = {
   approvalSteps: { orderBy: { stepOrder: 'asc' as const } },
@@ -42,7 +43,7 @@ export class LeaveRequestsService {
   constructor(@Inject(PRISMA) private readonly prisma: ExtendedPrismaClient) {}
 
   async create(dto: CreateLeaveRequestDto, actor: AuthUser) {
-    if (!isPrivileged(actor.role)) {
+    if (!isPrivileged(actor)) {
       const mine = await this.actorEmployeeId(actor.userId);
       if (!mine || mine !== dto.employeeId) {
         throw new ForbiddenException('You can only request leave for yourself');
@@ -140,7 +141,7 @@ export class LeaveRequestsService {
     const where: Record<string, unknown> = {};
     if (query.status) where.status = query.status;
 
-    if (isPrivileged(actor.role)) {
+    if (isPrivileged(actor)) {
       if (query.employeeId) where.employeeId = query.employeeId;
     } else {
       where.employeeId = (await this.actorEmployeeId(actor.userId)) ?? '__none__';
@@ -291,18 +292,20 @@ export class LeaveRequestsService {
    */
   async approvers() {
     const rows = (await this.prisma.user.findMany({
-      where: { isActive: true, role: { name: { in: [...HR_MANAGEMENT_ROLES] } } } as never,
+      where: { isActive: true } as never,
       include: {
-        role: { select: { name: true } },
+        role: { select: { name: true, permissions: true } },
         employee: { select: { firstName: true, lastName: true } },
       },
     } as never)) as unknown as Array<{
       id: string; email: string;
-      role?: { name: string };
+      role?: { name: string; permissions: unknown };
       employee?: { firstName: string; lastName: string } | null;
     }>;
 
     return rows
+      // Anyone whose role grants leave.manage — same set HR_MANAGEMENT_ROLES named before this migration.
+      .filter((u) => resolveRolePermissions(u.role?.permissions).includes('leave.manage'))
       .map((u) => ({
         id: u.id,
         // Prefer the human's name; fall back to the login when a user isn't
@@ -328,7 +331,7 @@ export class LeaveRequestsService {
   async cancel(id: string, actor: AuthUser) {
     const row = await this.loadRaw(id);
     if (row.status !== 'PENDING') throw new BadRequestException('Only pending requests can be cancelled');
-    if (!isPrivileged(actor.role)) {
+    if (!isPrivileged(actor)) {
       const mine = await this.actorEmployeeId(actor.userId);
       if (mine !== row.employeeId) throw new ForbiddenException('You can only cancel your own request');
     }

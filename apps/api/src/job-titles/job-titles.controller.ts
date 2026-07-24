@@ -3,10 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JobTitlesService } from './job-titles.service';
 import { CreateJobTitleDto } from './dto/create-job-title.dto';
 import { UpdateJobTitleDto } from './dto/update-job-title.dto';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
-
-const MANAGE = [...HR_MANAGEMENT_ROLES] as string[];
+import { Permissions } from '../auth/decorators/permissions.decorator';
 
 @ApiTags('job-titles')
 @ApiBearerAuth()
@@ -14,7 +11,7 @@ const MANAGE = [...HR_MANAGEMENT_ROLES] as string[];
 export class JobTitlesController {
   constructor(private readonly jobTitles: JobTitlesService) {}
 
-  @Post() @Roles(...MANAGE)
+  @Post() @Permissions('org_structure.manage')
   create(@Body() dto: CreateJobTitleDto) { return this.jobTitles.create(dto); }
 
   @Get()
@@ -23,9 +20,9 @@ export class JobTitlesController {
   @Get(':id')
   get(@Param('id') id: string) { return this.jobTitles.get(id); }
 
-  @Patch(':id') @Roles(...MANAGE)
+  @Patch(':id') @Permissions('org_structure.manage')
   update(@Param('id') id: string, @Body() dto: UpdateJobTitleDto) { return this.jobTitles.update(id, dto); }
 
-  @Delete(':id') @Roles(...MANAGE)
+  @Delete(':id') @Permissions('org_structure.manage')
   remove(@Param('id') id: string) { return this.jobTitles.remove(id); }
 }

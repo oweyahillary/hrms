@@ -1,14 +1,9 @@
 /**
- * Roles allowed to see DECRYPTED PII (national ID, KRA PIN, bank account) and to
- * create/update/terminate employees. Everyone else sees masked values on reads.
- * Role-name based for Phase 1; a permission flag can replace this later.
+ * Gates seeing DECRYPTED PII (national ID, KRA PIN, bank account) on the
+ * pii.view permission. Everyone else sees masked values on reads.
  */
-import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
-
-export const PII_PRIVILEGED_ROLES = HR_MANAGEMENT_ROLES;
-
-export function isPiiPrivileged(role?: string): boolean {
-  return !!role && PII_PRIVILEGED_ROLES.includes(role);
+export function isPiiPrivileged(permissions: readonly string[]): boolean {
+  return permissions.includes('pii.view');
 }
 
 /** Mask all but the last 4 characters (e.g. '12345678' -> '****5678'). */
@@ -19,7 +14,7 @@ export function maskLast4(value: string | null | undefined): string | null {
   return '*'.repeat(s.length - 4) + s.slice(-4);
 }
 
-/** Choose the visible form of a decrypted PII value based on the caller's role. */
+/** Choose the visible form of a decrypted PII value based on the caller's permissions. */
 export function presentPii(plaintext: string | null, privileged: boolean): string | null {
   if (plaintext == null) return null;
   return privileged ? plaintext : maskLast4(plaintext);

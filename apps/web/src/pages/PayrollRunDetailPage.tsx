@@ -20,7 +20,7 @@ import {
 import { listEmployees } from '../api/employees';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import { canManageEmployees } from '../auth/roles';
+import { hasPermission } from '../auth/permissions';
 import { ErrorCard } from '../components/ErrorCard';
 import { kes } from '../utils/money';
 
@@ -114,7 +114,7 @@ export function PayrollRunDetailPage() {
   const { id = '' } = useParams();
   const location = useLocation();
   const { user } = useAuth();
-  const allowed = canManageEmployees(user?.role);
+  const allowed = hasPermission(user?.permissions, 'payroll.run');
 
   const [run, setRun] = useState<PayrollRunDetail | null>(null);
   const [loading, setLoading] = useState(true);

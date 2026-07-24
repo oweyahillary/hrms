@@ -2,8 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { LoansService } from './loans.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
+import { Permissions } from '../auth/decorators/permissions.decorator';
 
 @ApiTags('loans')
 @ApiBearerAuth()
@@ -11,12 +10,12 @@ import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
 export class EmployeeLoansController {
   constructor(private readonly svc: LoansService) {}
 
-  @Post() @Roles(...HR_MANAGEMENT_ROLES)
+  @Post() @Permissions('payroll.manage')
   create(@Param('employeeId') employeeId: string, @Body() dto: CreateLoanDto) {
     return this.svc.create(employeeId, dto);
   }
 
-  @Get() @Roles(...HR_MANAGEMENT_ROLES)
+  @Get() @Permissions('payroll.manage')
   list(@Param('employeeId') employeeId: string) { return this.svc.list(employeeId); }
 }
 
@@ -26,9 +25,9 @@ export class EmployeeLoansController {
 export class LoansController {
   constructor(private readonly svc: LoansService) {}
 
-  @Get(':id') @Roles(...HR_MANAGEMENT_ROLES)
+  @Get(':id') @Permissions('payroll.manage')
   findOne(@Param('id') id: string) { return this.svc.findOne(id); }
 
-  @Patch(':id/cancel') @Roles(...HR_MANAGEMENT_ROLES)
+  @Patch(':id/cancel') @Permissions('payroll.manage')
   cancel(@Param('id') id: string) { return this.svc.cancel(id); }
 }

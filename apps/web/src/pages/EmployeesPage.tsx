@@ -17,7 +17,7 @@ import {
 } from '../api/lookups';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import { canManageEmployees } from '../auth/roles';
+import { hasPermission } from '../auth/permissions';
 import { ErrorCard } from '../components/ErrorCard';
 import { formatDate as fmtDate } from '../utils/date';
 
@@ -80,7 +80,7 @@ export function EmployeesPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
-  const canAdd = canManageEmployees(user?.role);
+  const canAdd = hasPermission(user?.permissions, 'employees.write');
 
   // Hand the current list URL (filters, sort, page) to the detail screen so its
   // "Back to employees" returns to this exact view rather than a bare list.

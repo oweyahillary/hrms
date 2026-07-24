@@ -7,12 +7,9 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { EmployeeDocumentsService, type UploadedFileLike } from './employee-documents.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { Permissions } from '../auth/decorators/permissions.decorator';
 import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.decorator';
-import { PII_PRIVILEGED_ROLES } from './employee-pii';
 import { MAX_UPLOAD_BYTES } from '../storage/storage-path';
-
-const MANAGE = [...PII_PRIVILEGED_ROLES] as string[];
 
 @ApiTags('employee-documents')
 @ApiBearerAuth()
@@ -21,7 +18,7 @@ export class EmployeeDocumentsController {
   constructor(private readonly documents: EmployeeDocumentsService) {}
 
   @Post()
-  @Roles(...MANAGE)
+  @Permissions('employees.write')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES } }))
   upload(
     @Param('employeeId') employeeId: string,
@@ -33,13 +30,13 @@ export class EmployeeDocumentsController {
   }
 
   @Get()
-  @Roles(...MANAGE)
+  @Permissions('employees.write')
   list(@Param('employeeId') employeeId: string) {
     return this.documents.list(employeeId);
   }
 
   @Get(':docId/download')
-  @Roles(...MANAGE)
+  @Permissions('employees.write')
   async download(
     @Param('employeeId') employeeId: string,
     @Param('docId') docId: string,
@@ -55,7 +52,7 @@ export class EmployeeDocumentsController {
   }
 
   @Delete(':docId')
-  @Roles(...MANAGE)
+  @Permissions('employees.write')
   remove(@Param('employeeId') employeeId: string, @Param('docId') docId: string) {
     return this.documents.remove(employeeId, docId);
   }

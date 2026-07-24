@@ -9,7 +9,7 @@ import { ForceResetDto } from './dto/force-reset.dto';
 import { MfaEnableDto, MfaVerifyDto, MfaDisableDto } from './dto/mfa.dto';
 import { Public } from './decorators/public.decorator';
 import { BypassPasswordChange } from './decorators/bypass-password-change.decorator';
-import { Roles } from './decorators/roles.decorator';
+import { Permissions } from './decorators/permissions.decorator';
 import { CurrentUser, type AuthUser } from './decorators/current-user.decorator';
 
 @ApiTags('auth')
@@ -57,7 +57,7 @@ export class AuthController {
 
   /** Admin: force a user in the caller's org to change password on next login. */
   @Post('force-reset')
-  @Roles('Admin')
+  @Permissions('users.manage')
   @HttpCode(200)
   forceReset(@Body() dto: ForceResetDto, @CurrentUser() user: AuthUser) {
     return this.auth.forcePasswordReset(user.organizationId, dto.email);

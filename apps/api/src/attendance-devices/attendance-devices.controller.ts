@@ -4,10 +4,7 @@ import { AttendanceDevicesService } from './attendance-devices.service';
 import { CreateDeviceDto } from './dto/create-device.dto';
 import { UpdateDeviceDto } from './dto/update-device.dto';
 import { ResolveUnmatchedDto } from './dto/resolve-unmatched.dto';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { HR_MANAGEMENT_ROLES } from '../auth/roles.constants';
-
-const MANAGE = [...HR_MANAGEMENT_ROLES] as string[];
+import { Permissions } from '../auth/decorators/permissions.decorator';
 
 @ApiTags('attendance-devices')
 @ApiBearerAuth()
@@ -15,33 +12,33 @@ const MANAGE = [...HR_MANAGEMENT_ROLES] as string[];
 export class AttendanceDevicesController {
   constructor(private readonly devices: AttendanceDevicesService) {}
 
-  @Post() @Roles(...MANAGE)
+  @Post() @Permissions('attendance.manage')
   create(@Body() dto: CreateDeviceDto) {
     return this.devices.create(dto);
   }
 
-  @Get() @Roles(...MANAGE)
+  @Get() @Permissions('attendance.manage')
   list() {
     return this.devices.list();
   }
 
-  @Get('unmatched-punches') @Roles(...MANAGE)
+  @Get('unmatched-punches') @Permissions('attendance.manage')
   listUnmatched() {
     return this.devices.listUnmatched();
   }
 
-  @Post('unmatched-punches/resolve') @Roles(...MANAGE)
+  @Post('unmatched-punches/resolve') @Permissions('attendance.manage')
   resolveUnmatched(@Body() dto: ResolveUnmatchedDto) {
     return this.devices.resolveUnmatched(dto);
   }
 
-  @Patch(':id') @Roles(...MANAGE)
+  @Patch(':id') @Permissions('attendance.manage')
   update(@Param('id') id: string, @Body() dto: UpdateDeviceDto) {
     return this.devices.update(id, dto);
   }
 
   /** 409 if any punch still references this device — deactivate (PATCH active:false) instead. */
-  @Delete(':id') @Roles(...MANAGE)
+  @Delete(':id') @Permissions('attendance.manage')
   remove(@Param('id') id: string) {
     return this.devices.remove(id);
   }
