@@ -45,10 +45,15 @@ import { OvertimePage } from './pages/OvertimePage';
 import { SettingsOvertimePage } from './pages/SettingsOvertimePage';
 import { MyOvertimePage } from './pages/MyOvertimePage';
 
-const PAYROLL_PERMS = ['payroll.run', 'payroll.finalize', 'payroll.manage'];
+const EMPLOYEES_VIEW = ['employees.view', 'employees.write'];
+const LEAVE_VIEW = ['leave.view', 'leave.approve', 'leave.manage'];
+const SHIFTS_VIEW = ['shifts.view', 'shifts.manage'];
+const ATTENDANCE_VIEW = ['attendance.view', 'attendance.manage'];
+const OVERTIME_VIEW = ['overtime.view', 'overtime.approve', 'overtime.manage'];
+const PAYROLL_PERMS = ['payroll.view', 'payroll.run', 'payroll.finalize', 'payroll.manage', 'reports.view'];
 const SETTINGS_PERMS = [
   'settings.manage', 'users.manage', 'org_structure.manage', 'shifts.manage',
-  'attendance.manage', 'statutory_rates.manage', 'compliance.manage', 'payroll.manage',
+  'attendance.manage', 'statutory_rates.manage', 'compliance.manage', 'overtime.manage',
 ];
 
 export function App() {
@@ -64,19 +69,18 @@ export function App() {
             <AppShellLayout>
               <Routes>
                 <Route path="/" element={<DashboardPage />} />
-                <Route path="/employees" element={<RequirePermission permission="employees.write"><EmployeesPage /></RequirePermission>} />
+                <Route path="/employees" element={<RequirePermission permission={EMPLOYEES_VIEW}><EmployeesPage /></RequirePermission>} />
                 <Route path="/employees/new" element={<RequirePermission permission="employees.write"><EmployeeCreatePage /></RequirePermission>} />
-                <Route path="/employees/:id" element={<RequirePermission permission="employees.write"><EmployeeDetailPage /></RequirePermission>} />
+                <Route path="/employees/:id" element={<RequirePermission permission={EMPLOYEES_VIEW}><EmployeeDetailPage /></RequirePermission>} />
                 <Route path="/employees/:id/edit" element={<RequirePermission permission="employees.write"><EmployeeEditPage /></RequirePermission>} />
-                <Route path="/leave" element={<RequirePermission permission="leave.manage"><LeavePage /></RequirePermission>} />
+                <Route path="/leave" element={<RequirePermission permission={LEAVE_VIEW}><LeavePage /></RequirePermission>} />
                 {/* Shared: linked from both the HR "Leave" section and everyone's "My Leave" — not permission-gated. */}
                 <Route path="/leave/apply" element={<LeaveApplyPage />} />
                 <Route path="/leave/balances" element={<RequirePermission permission="leave.manage"><LeaveBalancesPage /></RequirePermission>} />
                 <Route path="/leave/types" element={<RequirePermission permission="leave.manage"><LeaveTypesPage /></RequirePermission>} />
-                <Route path="/shifts" element={<RequirePermission permission="shifts.manage"><ShiftsPage /></RequirePermission>} />
-                <Route path="/attendance" element={<RequirePermission permission="attendance.manage"><AttendancePage /></RequirePermission>} />
-                {/* payroll.manage is a temporary mapping — overtime predates the granular catalogue and never had its own key; see feat/granular-permissions. */}
-                <Route path="/overtime" element={<RequirePermission permission="payroll.manage"><OvertimePage /></RequirePermission>} />
+                <Route path="/shifts" element={<RequirePermission permission={SHIFTS_VIEW}><ShiftsPage /></RequirePermission>} />
+                <Route path="/attendance" element={<RequirePermission permission={ATTENDANCE_VIEW}><AttendancePage /></RequirePermission>} />
+                <Route path="/overtime" element={<RequirePermission permission={OVERTIME_VIEW}><OvertimePage /></RequirePermission>} />
                 <Route path="/payroll" element={<RequirePermission permission={PAYROLL_PERMS}><PayrollLayout /></RequirePermission>}>
                   <Route index element={<PayrollRunsPage />} />
                   <Route path="new" element={<PayrollRunCreatePage />} />
@@ -96,7 +100,7 @@ export function App() {
                 <Route path="/settings/departments" element={<RequirePermission permission="org_structure.manage"><SettingsDepartmentsPage /></RequirePermission>} />
                 <Route path="/settings/shifts" element={<RequirePermission permission="shifts.manage"><SettingsShiftsPage /></RequirePermission>} />
                 <Route path="/settings/devices" element={<RequirePermission permission="attendance.manage"><SettingsDevicesPage /></RequirePermission>} />
-                <Route path="/settings/overtime" element={<RequirePermission permission="payroll.manage"><SettingsOvertimePage /></RequirePermission>} />
+                <Route path="/settings/overtime" element={<RequirePermission permission="overtime.manage"><SettingsOvertimePage /></RequirePermission>} />
                 <Route path="/settings/users" element={<RequirePermission permission="users.manage"><UsersPage /></RequirePermission>} />
                 <Route path="/settings/users/new" element={<RequirePermission permission="users.manage"><InviteUserPage /></RequirePermission>} />
                 <Route path="/settings/roles" element={<RequirePermission permission="users.manage"><SettingsRolesPage /></RequirePermission>} />

@@ -12,6 +12,7 @@ import { OidcService } from './oidc.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { PasswordChangeGuard } from './guards/password-change.guard';
 import { PermissionsGuard } from './guards/permissions.guard';
+import { DepartmentScopeService } from './department-scope.service';
 
 @Module({
   imports: [
@@ -26,12 +27,13 @@ import { PermissionsGuard } from './guards/permissions.guard';
     TokensService,
     JwtStrategy,
     OidcService,
+    DepartmentScopeService,
     // Order matters: authenticate first, then block if a password change is
     // owed, then authorize by permission.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PasswordChangeGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
   ],
-  exports: [PasswordService, TokensService],
+  exports: [PasswordService, TokensService, DepartmentScopeService],
 })
 export class AuthModule {}

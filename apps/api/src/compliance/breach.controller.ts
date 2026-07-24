@@ -4,7 +4,9 @@ import { BreachService } from './breach.service';
 import { CreateBreachDto } from './dto/create-breach.dto';
 import { UpdateBreachDto } from './dto/update-breach.dto';
 import { ListBreachDto } from './dto/list-breach.dto';
-import { Permissions } from '../auth/decorators/permissions.decorator';
+import { AnyPermission, Permissions } from '../auth/decorators/permissions.decorator';
+
+const VIEW = ['compliance.view', 'compliance.manage'];
 
 @ApiTags('compliance-breach')
 @ApiBearerAuth()
@@ -15,10 +17,10 @@ export class BreachController {
   @Post() @Permissions('compliance.manage')
   create(@Body() dto: CreateBreachDto) { return this.breach.create(dto); }
 
-  @Get() @Permissions('compliance.manage')
+  @Get() @AnyPermission(...VIEW)
   list(@Query() q: ListBreachDto) { return this.breach.list(q.status); }
 
-  @Get(':id') @Permissions('compliance.manage')
+  @Get(':id') @AnyPermission(...VIEW)
   get(@Param('id') id: string) { return this.breach.get(id); }
 
   @Patch(':id') @Permissions('compliance.manage')

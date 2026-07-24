@@ -45,25 +45,24 @@ const NAV: NavItem[] = [
  * equivalents instead (SELF_SERVICE_NAV / MY_SPACE_NAV below), not these.
  */
 const HR_NAV: NavItem[] = [
-  { to: '/employees', label: 'Employees', icon: IconUsers, permission: 'employees.write' },
+  { to: '/employees', label: 'Employees', icon: IconUsers, permission: ['employees.view', 'employees.write'] },
   {
     to: '/leave',
     label: 'Leave',
     icon: IconCalendarStats,
-    permission: 'leave.manage',
+    permission: ['leave.view', 'leave.approve', 'leave.manage'],
     children: [
       // '/leave' is both the section and the requests screen, so it has to match
       // exactly or it would light up on every child route.
       { to: '/leave', label: 'Requests', exact: true },
       { to: '/leave/apply', label: 'Apply for leave' },
-      { to: '/leave/balances', label: 'Balances' },
-      { to: '/leave/types', label: 'Leave types' },
+      { to: '/leave/balances', label: 'Balances', permission: 'leave.manage' },
+      { to: '/leave/types', label: 'Leave types', permission: 'leave.manage' },
     ],
   },
-  { to: '/shifts', label: 'Shifts', icon: IconClockHour4, permission: 'shifts.manage' },
-  { to: '/attendance', label: 'Attendance', icon: IconClipboardCheck, permission: 'attendance.manage' },
-  // payroll.manage is a temporary mapping — see the matching note in App.tsx.
-  { to: '/overtime', label: 'Overtime', icon: IconClockPlus, permission: 'payroll.manage' },
+  { to: '/shifts', label: 'Shifts', icon: IconClockHour4, permission: ['shifts.view', 'shifts.manage'] },
+  { to: '/attendance', label: 'Attendance', icon: IconClipboardCheck, permission: ['attendance.view', 'attendance.manage'] },
+  { to: '/overtime', label: 'Overtime', icon: IconClockPlus, permission: ['overtime.view', 'overtime.approve', 'overtime.manage'] },
 ];
 
 /**
@@ -118,11 +117,12 @@ const MY_SPACE_NAV: NavItem[] = [
 const PAYROLL_NAV: NavItem[] = [
   // Flat single entry: the Run / Setup / Reports sub-navigation lives in a tab
   // bar at the top of the Payroll section (PayrollLayout), not in the sidebar.
-  { to: '/payroll', label: 'Payroll', icon: IconReportMoney, permission: ['payroll.run', 'payroll.finalize', 'payroll.manage'] },
+  { to: '/payroll', label: 'Payroll', icon: IconReportMoney, permission: ['payroll.view', 'payroll.run', 'payroll.finalize', 'payroll.manage', 'reports.view'] },
 ];
 
 const SETTINGS_PERMS = [
-  'settings.manage', 'users.manage', 'org_structure.manage', 'shifts.manage', 'attendance.manage', 'payroll.manage',
+  'settings.manage', 'users.manage', 'org_structure.manage', 'shifts.manage',
+  'attendance.manage', 'statutory_rates.manage', 'compliance.manage', 'overtime.manage',
 ];
 
 /** Settings is organisation administration — only for roles that can manage some part of it. */
@@ -140,7 +140,7 @@ const ADMIN_NAV: NavItem[] = [
       { to: '/settings/departments', label: 'Departments', permission: 'org_structure.manage' },
       { to: '/settings/shifts', label: 'Shift definitions', permission: 'shifts.manage' },
       { to: '/settings/devices', label: 'Devices', permission: 'attendance.manage' },
-      { to: '/settings/overtime', label: 'Overtime policy', permission: 'payroll.manage' },
+      { to: '/settings/overtime', label: 'Overtime policy', permission: 'overtime.manage' },
       { to: '/settings/users', label: 'Users', permission: 'users.manage' },
       { to: '/settings/roles', label: 'Roles', permission: 'users.manage' },
     ],

@@ -6,12 +6,10 @@ import { QueryOvertimeDto } from './dto/query-overtime.dto';
 import { DeriveOvertimeDto } from './dto/derive-overtime.dto';
 import { RejectOvertimeDto } from './dto/reject-overtime.dto';
 import { BulkApproveOvertimeDto } from './dto/bulk-approve-overtime.dto';
-import { Permissions } from '../auth/decorators/permissions.decorator';
+import { AnyPermission, Permissions } from '../auth/decorators/permissions.decorator';
 import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.decorator';
 
-// payroll.manage is a temporary mapping — overtime predates the granular permission
-// catalogue and never had its own key; see feat/granular-permissions for the split.
-const MANAGE = 'payroll.manage';
+const VIEW = ['overtime.view', 'overtime.approve', 'overtime.manage'];
 
 @ApiTags('overtime')
 @ApiBearerAuth()
@@ -20,30 +18,30 @@ export class OvertimeController {
   constructor(private readonly overtime: OvertimeService) {}
 
   /** Generates/updates PENDING DERIVED entries for the range from existing attendance + shift data. Idempotent — see OvertimeService.derive. */
-  @Post('derive') @Permissions(MANAGE)
+  @Post('derive') @Permissions('overtime.manage')
   derive(@Body() dto: DeriveOvertimeDto) { return this.overtime.derive(dto); }
 
-  @Post() @Permissions(MANAGE)
+  @Post() @Permissions('overtime.manage')
   create(@Body() dto: CreateOvertimeEntryDto) { return this.overtime.createManual(dto); }
 
-  @Get() @Permissions(MANAGE)
-  list(@Query() query: QueryOvertimeDto) { return this.overtime.list(query); }
+  @Get() @AnyPermission(...VIEW)
+  list(@Query() query: QueryOvertimeDto, @CurrentUser() user: AuthUser) { return this.overtime.list(query, user); }
 
-  @Post('bulk-approve') @Permissions(MANAGE)
+  @Post('bulk-approve') @Permissions('overtime.approve')
   bulkApprove(@Body() dto: BulkApproveOvertimeDto, @CurrentUser() user: AuthUser) { return this.overtime.bulkApprove(dto, user); }
 
-  @Get(':id') @Permissions(MANAGE)
-  get(@Param('id') id: string) { return this.overtime.get(id); }
+  @Get(':id') @AnyPermission(...VIEW)
+  get(@Param('id') id: string, @CurrentUser() user: AuthUser) { return this.overtime.get(id, user); }
 
-  @Patch(':id') @Permissions(MANAGE)
+  @Patch(':id') @Permissions('overtime.manage')
   update(@Param('id') id: string, @Body() dto: Partial<CreateOvertimeEntryDto>) { return this.overtime.update(id, dto); }
 
-  @Delete(':id') @Permissions(MANAGE)
+  @Delete(':id') @Permissions('overtime.manage')
   remove(@Param('id') id: string) { return this.overtime.remove(id); }
 
-  @Post(':id/approve') @Permissions(MANAGE)
+  @Post(':id/approve') @Permissions('overtime.approve')
   approve(@Param('id') id: string, @CurrentUser() user: AuthUser) { return this.overtime.approve(id, user); }
 
-  @Post(':id/reject') @Permissions(MANAGE)
+  @Post(':id/reject') @Permissions('overtime.approve')
   reject(@Param('id') id: string, @Body() dto: RejectOvertimeDto, @CurrentUser() user: AuthUser) { return this.overtime.reject(id, dto, user); }
 }

@@ -72,8 +72,12 @@ export function LeaveApplyPage() {
         // Non-HR applicants have no employee picker (below), so there's
         // nothing else to ever set form.values.employeeId — without this,
         // the field stays '' forever and the form can never validate.
+        // The picker itself is independent of leave types loading: a
+        // leave.manage holder without employees.view (narrower than any
+        // shipped template) still gets a working form, just an empty picker.
         const [emps, tps, mine] = await Promise.all([
-          isHr ? listEmployees({ status: 'ACTIVE', pageSize: 100, sort: 'name', order: 'asc' })
+          isHr
+            ? listEmployees({ status: 'ACTIVE', pageSize: 100, sort: 'name', order: 'asc' }).catch(() => ({ data: [] as EmployeeListRow[] }))
             : Promise.resolve({ data: [] as EmployeeListRow[] }),
           getLeaveTypes(),
           isHr ? Promise.resolve(null) : getMyProfile(),

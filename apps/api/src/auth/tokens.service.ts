@@ -2,14 +2,15 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { createHash, randomBytes } from 'node:crypto';
+import type { GrantedPermission } from './permissions';
 
 /** Claims embedded in the short-lived access JWT. */
 export interface AccessTokenPayload {
-  sub: string;      // userId
-  org: string;      // organizationId
-  role: string;     // role name (display only — authorization uses `perms`)
-  perms: string[];  // resolved permission keys, see auth/permissions.ts
-  mcp?: boolean;    // must-change-password: true blocks all routes except the change-password flow
+  sub: string;                 // userId
+  org: string;                 // organizationId
+  role: string;                // role name (display only — authorization uses `perms`)
+  perms: GrantedPermission[];  // resolved {key,scope} permissions, see auth/permissions.ts
+  mcp?: boolean;                // must-change-password: true blocks all routes except the change-password flow
 }
 
 @Injectable()

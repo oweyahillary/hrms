@@ -9,8 +9,11 @@ import { LeaveAccrualController } from './leave-accrual.controller';
 import { LeaveAccrualService } from './leave-accrual.service';
 import { LeaveRolloverController } from './leave-rollover.controller';
 import { LeaveRolloverService } from './leave-rollover.service';
+import { AuthModule } from '../auth/auth.module';
 
+// AuthModule is imported explicitly for DepartmentScopeService (OWN_DEPARTMENT scoping).
 @Module({
+  imports: [AuthModule],
   controllers: [
     LeaveTypesController, LeaveBalancesController, LeaveRequestsController,
     LeaveAccrualController, LeaveRolloverController,

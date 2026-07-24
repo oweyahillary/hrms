@@ -2,7 +2,9 @@ import { Body, Controller, Delete, Get, Param, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { RetentionService } from './retention.service';
 import { UpsertRetentionPolicyDto } from './dto/retention-policy.dto';
-import { Permissions } from '../auth/decorators/permissions.decorator';
+import { AnyPermission, Permissions } from '../auth/decorators/permissions.decorator';
+
+const VIEW = ['compliance.view', 'compliance.manage'];
 
 @ApiTags('compliance-retention')
 @ApiBearerAuth()
@@ -13,10 +15,10 @@ export class RetentionController {
   @Put() @Permissions('compliance.manage')
   upsert(@Body() dto: UpsertRetentionPolicyDto) { return this.retention.upsert(dto); }
 
-  @Get() @Permissions('compliance.manage')
+  @Get() @AnyPermission(...VIEW)
   list() { return this.retention.list(); }
 
-  @Get(':id') @Permissions('compliance.manage')
+  @Get(':id') @AnyPermission(...VIEW)
   get(@Param('id') id: string) { return this.retention.get(id); }
 
   @Delete(':id') @Permissions('compliance.manage')

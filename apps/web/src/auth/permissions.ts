@@ -1,13 +1,17 @@
 /**
  * Permission checks against the set the API embeds in the session (see
  * apps/api/src/auth/permissions.ts — the single source of truth for what
- * each key means; this file only reads the array, never redefines it).
+ * each key means and how scope works; this file only reads the array, never
+ * redefines it).
  */
-export function hasPermission(permissions: string[] | undefined, key: string): boolean {
-  return !!permissions?.includes(key);
+export type Scope = 'ALL' | 'OWN_DEPARTMENT';
+export interface GrantedPermission { key: string; scope: Scope; }
+
+export function hasPermission(permissions: GrantedPermission[] | undefined, key: string): boolean {
+  return !!permissions?.some((g) => g.key === key);
 }
 
-export function hasAnyPermission(permissions: string[] | undefined, keys: string[]): boolean {
+export function hasAnyPermission(permissions: GrantedPermission[] | undefined, keys: string[]): boolean {
   return keys.some((k) => hasPermission(permissions, k));
 }
 
@@ -20,6 +24,6 @@ export function hasAnyPermission(permissions: string[] | undefined, keys: string
  * access — mirrors the old canManageEmployees()'s role of a coarse
  * "am I staff or HR" signal, not a specific capability check.
  */
-export function isHrCapable(permissions: string[] | undefined): boolean {
+export function isHrCapable(permissions: GrantedPermission[] | undefined): boolean {
   return (permissions?.length ?? 0) > 0;
 }

@@ -1,7 +1,8 @@
 import { api, setAccessToken, setRefreshToken, getRefreshToken } from './client';
+import type { GrantedPermission } from '../auth/permissions';
 
 export interface SessionUser {
-  id: string; email: string; role: string; permissions: string[]; organizationId: string;
+  id: string; email: string; role: string; permissions: GrantedPermission[]; organizationId: string;
   organizationName?: string;
 }
 export interface Session {

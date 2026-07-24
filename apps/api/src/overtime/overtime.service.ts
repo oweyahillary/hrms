@@ -4,12 +4,16 @@ import {
   deriveOvertime, pickEffectiveOvertimePolicy, type ShiftWindow, type OvertimePolicyLike,
 } from './overtime-derivation';
 import { OvertimePolicyService, type OvertimePolicyRow } from './overtime-policy.service';
+import { effectiveScope, scopeFor } from '../auth/permissions';
+import { DepartmentScopeService } from '../auth/department-scope.service';
 import type { AuthUser } from '../auth/decorators/current-user.decorator';
 import type { CreateOvertimeEntryDto } from './dto/create-overtime-entry.dto';
 import type { DeriveOvertimeDto } from './dto/derive-overtime.dto';
 import type { QueryOvertimeDto } from './dto/query-overtime.dto';
 import type { RejectOvertimeDto } from './dto/reject-overtime.dto';
 import type { BulkApproveOvertimeDto } from './dto/bulk-approve-overtime.dto';
+
+const VIEW_KEYS = ['overtime.view', 'overtime.approve', 'overtime.manage'];
 
 interface EntryRow {
   id: string; employeeId: string; date: Date; hours: unknown; category: string;
@@ -29,6 +33,7 @@ export class OvertimeService {
   constructor(
     @Inject(PRISMA) private readonly prisma: ExtendedPrismaClient,
     private readonly policies: OvertimePolicyService,
+    private readonly deptScope: DepartmentScopeService,
   ) {}
 
   /**
@@ -160,11 +165,22 @@ export class OvertimeService {
     return this.present(row);
   }
 
-  async list(query: QueryOvertimeDto) {
+  /** `actor` is omitted for internal calls (self-service's listForEmployee, already employeeId-scoped). */
+  async list(query: QueryOvertimeDto, actor?: AuthUser) {
     const where: Record<string, unknown> = {};
     if (query.status) where.status = query.status;
     if (query.employeeId) where.employeeId = query.employeeId;
     else if (query.departmentId) where.employee = { departmentId: query.departmentId };
+
+    if (actor) {
+      const scope = effectiveScope(actor.permissions, VIEW_KEYS);
+      if (scope === 'OWN_DEPARTMENT') {
+        const ownDeptId = await this.deptScope.ownDepartmentId(actor.userId);
+        if (!ownDeptId) return [];
+        where.employee = { departmentId: ownDeptId }; // ANDs with employeeId above — an out-of-department id matches nothing
+      }
+    }
+
     if (query.from || query.to) {
       const range: Record<string, Date> = {};
       if (query.from) range.gte = new Date(`${query.from}T00:00:00.000Z`);
@@ -177,8 +193,10 @@ export class OvertimeService {
     return rows.map((r) => this.present(r));
   }
 
-  async get(id: string) {
-    return this.present(await this.mustOwn(id));
+  async get(id: string, actor: AuthUser) {
+    const row = await this.mustOwn(id);
+    await this.assertInScope(actor.userId, effectiveScope(actor.permissions, VIEW_KEYS), row.employeeId);
+    return this.present(row);
   }
 
   async update(id: string, dto: Partial<CreateOvertimeEntryDto>) {
@@ -202,6 +220,7 @@ export class OvertimeService {
   async approve(id: string, actor: AuthUser) {
     const row = await this.mustOwn(id);
     if (row.status !== 'PENDING') throw new ConflictException('Only a pending entry can be approved.');
+    await this.assertInScope(actor.userId, scopeFor(actor.permissions, 'overtime.approve'), row.employeeId);
     const updated = (await this.prisma.overtimeEntry.update({
       where: { id }, data: { status: 'APPROVED', approvedByUserId: actor.userId, approvedAt: new Date() } as never,
     })) as unknown as EntryRow;
@@ -211,6 +230,7 @@ export class OvertimeService {
   async reject(id: string, dto: RejectOvertimeDto, actor: AuthUser) {
     const row = await this.mustOwn(id);
     if (row.status !== 'PENDING') throw new ConflictException('Only a pending entry can be rejected.');
+    await this.assertInScope(actor.userId, scopeFor(actor.permissions, 'overtime.approve'), row.employeeId);
     const updated = (await this.prisma.overtimeEntry.update({
       where: { id }, data: { status: 'REJECTED', note: dto.note, approvedByUserId: actor.userId, approvedAt: new Date() } as never,
     })) as unknown as EntryRow;
@@ -223,6 +243,15 @@ export class OvertimeService {
       date: { gte: new Date(`${dto.from}T00:00:00.000Z`), lte: new Date(`${dto.to}T00:00:00.000Z`) },
     };
     if (dto.departmentId) where.employee = { departmentId: dto.departmentId };
+
+    const scope = scopeFor(actor.permissions, 'overtime.approve');
+    if (scope === 'OWN_DEPARTMENT') {
+      const ownDeptId = await this.deptScope.ownDepartmentId(actor.userId);
+      if (!ownDeptId) return { approved: 0 }; // fail closed
+      if (dto.departmentId && dto.departmentId !== ownDeptId) return { approved: 0 };
+      where.employee = { departmentId: ownDeptId };
+    }
+
     const pending = (await this.prisma.overtimeEntry.findMany({ where: where as never, select: { id: true } })) as unknown as Array<{ id: string }>;
     for (const p of pending) {
       await this.prisma.overtimeEntry.update({
@@ -241,6 +270,21 @@ export class OvertimeService {
     if (!row) throw new NotFoundException('Overtime entry not found');
     return row;
   }
+
+  /**
+   * For an OWN_DEPARTMENT `scope`, verify `employeeId` is in `actorUserId`'s
+   * own department — fail CLOSED (404, same as "doesn't exist") if the actor
+   * has no resolvable department. ALL scope (or null) is a no-op.
+   */
+  private async assertInScope(actorUserId: string, scope: 'ALL' | 'OWN_DEPARTMENT' | null, employeeId: string): Promise<void> {
+    if (scope !== 'OWN_DEPARTMENT') return;
+    const [ownDeptId, emp] = await Promise.all([
+      this.deptScope.ownDepartmentId(actorUserId),
+      this.prisma.employee.findFirst({ where: { id: employeeId } as never, select: { departmentId: true } }) as unknown as Promise<{ departmentId: string | null } | null>,
+    ]);
+    if (!ownDeptId || !emp || emp.departmentId !== ownDeptId) throw new NotFoundException('Overtime entry not found');
+  }
+
 
   private present(r: EntryRow) {
     return {

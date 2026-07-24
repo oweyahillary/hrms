@@ -7,7 +7,8 @@ import { AttendanceService } from './attendance.service';
 import { UpsertAttendanceDto } from './dto/upsert-attendance.dto';
 import { QueryAttendanceDto } from './dto/query-attendance.dto';
 import type { ImportPreset } from './attendance-import-presets';
-import { Permissions } from '../auth/decorators/permissions.decorator';
+import { AnyPermission, Permissions } from '../auth/decorators/permissions.decorator';
+import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.decorator';
 
 interface UploadedCsv { buffer: Buffer; }
 const MAX_CSV_BYTES = 5 * 1024 * 1024;
@@ -23,9 +24,9 @@ export class AttendanceController {
     return this.attendance.upsert(dto);
   }
 
-  @Get() @Permissions('attendance.manage')
-  list(@Query() query: QueryAttendanceDto) {
-    return this.attendance.list(query);
+  @Get() @AnyPermission('attendance.view', 'attendance.manage')
+  list(@Query() query: QueryAttendanceDto, @CurrentUser() user: AuthUser) {
+    return this.attendance.list(query, user);
   }
 
   /** preset defaults to NEUTRAL (today's columns, unchanged) — pass preset=ZKTECO for a ZKTeco device export. */

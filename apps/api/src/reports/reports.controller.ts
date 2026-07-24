@@ -22,19 +22,19 @@ function parsePeriod(year?: string, month?: string): { year: number; month: numb
 export class ReportsController {
   constructor(private readonly reports: ReportsService) {}
 
-  @Get('payroll-summary') @Permissions('payroll.manage')
+  @Get('payroll-summary') @Permissions('reports.view')
   payrollSummary(@Query('year') year?: string, @Query('month') month?: string) {
     const { year: y, month: m } = parsePeriod(year, month);
     return this.reports.payrollSummary(y, m);
   }
 
-  @Get('statutory-remittance') @Permissions('payroll.manage')
+  @Get('statutory-remittance') @Permissions('reports.view')
   statutoryRemittance(@Query('year') year?: string, @Query('month') month?: string) {
     const { year: y, month: m } = parsePeriod(year, month);
     return this.reports.statutoryRemittance(y, m);
   }
 
-  @Get('year-trend') @Permissions('payroll.manage')
+  @Get('year-trend') @Permissions('reports.view')
   yearTrend(@Query('year') year?: string) {
     const y = Number(year);
     if (!Number.isInteger(y) || y < 2000 || y > 2100) {
@@ -43,12 +43,12 @@ export class ReportsController {
     return this.reports.yearTrend(y);
   }
 
-  @Get('headcount') @Permissions('payroll.manage')
+  @Get('headcount') @Permissions('reports.view')
   headcount() {
     return this.reports.headcount();
   }
 
-  @Get('statutory-remittance/pdf') @Permissions('payroll.manage')
+  @Get('statutory-remittance/pdf') @Permissions('reports.view')
   async remittancePdf(
     @Res({ passthrough: true }) res: Response,
     @Query('year') year?: string,
@@ -60,7 +60,7 @@ export class ReportsController {
     return new StreamableFile(buffer);
   }
 
-  @Get('payroll-summary/pdf') @Permissions('payroll.manage')
+  @Get('payroll-summary/pdf') @Permissions('reports.view')
   async payrollSummaryPdf(
     @Res({ passthrough: true }) res: Response,
     @Query('year') year?: string,
@@ -72,12 +72,12 @@ export class ReportsController {
     return new StreamableFile(buffer);
   }
 
-  @Get('loan-book') @Permissions('payroll.manage')
+  @Get('loan-book') @Permissions('reports.view')
   loanBook(@Query('employeeId') employeeId?: string, @Query('status') status?: string) {
     return this.reports.loanBook({ employeeId, status });
   }
 
-  @Get('loan-book/pdf') @Permissions('payroll.manage')
+  @Get('loan-book/pdf') @Permissions('reports.view')
   async loanBookPdf(
     @Res({ passthrough: true }) res: Response,
     @Query('employeeId') employeeId?: string,
@@ -88,19 +88,19 @@ export class ReportsController {
     return new StreamableFile(buffer);
   }
 
-  @Get('severance-register') @Permissions('payroll.manage')
+  @Get('severance-register') @Permissions('reports.view')
   severanceRegister() {
     return this.reports.severanceRegister();
   }
 
-  @Get('severance-register/pdf') @Permissions('payroll.manage')
+  @Get('severance-register/pdf') @Permissions('reports.view')
   async severanceRegisterPdf(@Res({ passthrough: true }) res: Response): Promise<StreamableFile> {
     const { buffer, filename } = await this.reports.severanceRegisterPdf();
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${filename}"` });
     return new StreamableFile(buffer);
   }
 
-  @Get('adjustments-register') @Permissions('payroll.manage')
+  @Get('adjustments-register') @Permissions('reports.view')
   adjustmentsRegister(
     @Query('employeeId') employeeId?: string,
     @Query('status') status?: string,
@@ -114,7 +114,7 @@ export class ReportsController {
     });
   }
 
-  @Get('adjustments-register/pdf') @Permissions('payroll.manage')
+  @Get('adjustments-register/pdf') @Permissions('reports.view')
   async adjustmentsRegisterPdf(
     @Res({ passthrough: true }) res: Response,
     @Query('employeeId') employeeId?: string,

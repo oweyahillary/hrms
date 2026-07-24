@@ -1,10 +1,11 @@
-import { ArrayUnique, IsArray, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
-import { PERMISSION_KEYS } from '../../auth/permissions';
+import { Type } from 'class-transformer';
+import { ArrayUnique, IsArray, IsOptional, IsString, MaxLength, MinLength, ValidateNested } from 'class-validator';
+import { GrantedPermissionDto } from './granted-permission.dto';
 
 export class UpdateRoleDto {
   @IsOptional() @IsString() @MinLength(1) @MaxLength(60)
   name?: string;
 
-  @IsOptional() @IsArray() @ArrayUnique() @IsIn(PERMISSION_KEYS, { each: true })
-  permissions?: string[];
+  @IsOptional() @IsArray() @ArrayUnique((p: GrantedPermissionDto) => p.key) @ValidateNested({ each: true }) @Type(() => GrantedPermissionDto)
+  permissions?: GrantedPermissionDto[];
 }

@@ -1,32 +1,55 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Badge, Button, Card, Checkbox, Group, Modal, Stack, Text, TextInput, Title, Tooltip,
+  Badge, Button, Card, Checkbox, Group, Modal, Select, Stack, Text, TextInput, Title, Tooltip,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { IconCheck, IconPencil, IconPlus, IconShieldLock, IconTrash } from '@tabler/icons-react';
 import {
-  createRole, deleteRole, getPermissionCatalogue, listAdminRoles, updateRole,
-  type AdminRole, type PermissionDef,
+  createRole, deleteRole, getPermissionCatalogue, getRoleTemplates, listAdminRoles, updateRole,
+  type AdminRole, type PermissionDef, type RoleTemplate,
 } from '../api/users';
+import type { GrantedPermission, Scope } from '../auth/permissions';
 import { ApiError } from '../api/client';
 import { ErrorCard } from '../components/ErrorCard';
 import { EmptyState } from '../components/EmptyState';
 
+/**
+ * Mirrors auth/permissions.ts's IMPLIES_VIEW — a UI-only convenience so
+ * ticking "Approve leave" also ticks "View leave requests". The backend
+ * stores exactly what's ticked here; nothing is inferred at check time there.
+ */
+const IMPLIES_VIEW: Readonly<Record<string, string>> = {
+  'leave.approve': 'leave.view', 'leave.manage': 'leave.view',
+  'overtime.approve': 'overtime.view', 'overtime.manage': 'overtime.view',
+  'attendance.manage': 'attendance.view',
+  'shifts.manage': 'shifts.view',
+  'employees.write': 'employees.view',
+  'compliance.manage': 'compliance.view',
+  'payroll.run': 'payroll.view', 'payroll.manage': 'payroll.view',
+};
+
+const SCOPE_OPTIONS = [
+  { value: 'ALL', label: 'Whole organisation' },
+  { value: 'OWN_DEPARTMENT', label: 'Own department only' },
+];
+
 interface FormValues {
   name: string;
-  permissions: string[];
+  permissions: GrantedPermission[];
 }
 
 export function SettingsRolesPage() {
   const [roles, setRoles] = useState<AdminRole[]>([]);
   const [catalogue, setCatalogue] = useState<PermissionDef[]>([]);
+  const [templates, setTemplates] = useState<RoleTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   const [editing, setEditing] = useState<AdminRole | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [templateName, setTemplateName] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AdminRole | null>(null);
@@ -42,9 +65,10 @@ export function SettingsRolesPage() {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [r, c] = await Promise.all([listAdminRoles(), getPermissionCatalogue()]);
+      const [r, c, t] = await Promise.all([listAdminRoles(), getPermissionCatalogue(), getRoleTemplates()]);
       setRoles(r);
       setCatalogue(c);
+      setTemplates(t);
     } catch (e) {
       setError(e instanceof ApiError && e.status === 403
         ? 'You do not have permission to manage roles.'
@@ -56,8 +80,16 @@ export function SettingsRolesPage() {
 
   useEffect(() => { void load(); }, [load, reloadKey]);
 
+  /** Catalogue grouped by resource, in the order resources first appear (no separate ordering config to keep in sync). */
+  const resourceGroups = useMemo(() => {
+    const order: string[] = [];
+    for (const p of catalogue) if (!order.includes(p.resource)) order.push(p.resource);
+    return order.map((resource) => ({ resource, items: catalogue.filter((p) => p.resource === resource) }));
+  }, [catalogue]);
+
   const openNew = () => {
     setEditing(null);
+    setTemplateName(null);
     form.setValues({ name: '', permissions: [] });
     form.resetDirty();
     setFormError(null);
@@ -66,10 +98,38 @@ export function SettingsRolesPage() {
 
   const openEdit = (r: AdminRole) => {
     setEditing(r);
+    setTemplateName(null);
     form.setValues({ name: r.name, permissions: r.permissions });
     form.resetDirty();
     setFormError(null);
     setFormOpen(true);
+  };
+
+  const applyTemplate = (name: string | null) => {
+    setTemplateName(name);
+    const tpl = templates.find((t) => t.name === name);
+    if (!tpl) return;
+    form.setFieldValue('permissions', tpl.permissions.map((p) => ({ ...p })));
+    if (!form.values.name.trim()) form.setFieldValue('name', tpl.name);
+  };
+
+  const isChecked = (key: string) => form.values.permissions.some((p) => p.key === key);
+  const scopeOf = (key: string): Scope => form.values.permissions.find((p) => p.key === key)?.scope ?? 'ALL';
+
+  const toggleKey = (def: PermissionDef, checked: boolean) => {
+    let next = form.values.permissions.filter((p) => p.key !== def.key);
+    if (checked) {
+      next = [...next, { key: def.key, scope: 'ALL' as Scope }];
+      const impliedKey = IMPLIES_VIEW[def.key];
+      if (impliedKey && !next.some((p) => p.key === impliedKey)) {
+        next = [...next, { key: impliedKey, scope: 'ALL' as Scope }];
+      }
+    }
+    form.setFieldValue('permissions', next);
+  };
+
+  const setScope = (key: string, scope: Scope) => {
+    form.setFieldValue('permissions', form.values.permissions.map((p) => (p.key === key ? { ...p, scope } : p)));
   };
 
   const submit = async (values: FormValues) => {
@@ -114,6 +174,18 @@ export function SettingsRolesPage() {
     return null;
   };
 
+  const summaryFor = (r: AdminRole): string => {
+    if (r.permissions.length === 0) return 'No permissions granted — self-service access only.';
+    return r.permissions
+      .map((gp) => {
+        const def = catalogue.find((p) => p.key === gp.key);
+        if (!def) return null;
+        return def.scopeable && gp.scope === 'OWN_DEPARTMENT' ? `${def.label} (own department)` : def.label;
+      })
+      .filter((s): s is string => !!s)
+      .join(', ');
+  };
+
   return (
     <Stack gap="lg" maw={880}>
       <Group justify="space-between" align="flex-start" wrap="wrap">
@@ -147,11 +219,7 @@ export function SettingsRolesPage() {
                   {r.isSeeded && <Badge variant="light" size="sm" color="sand">Built-in</Badge>}
                   <Badge variant="light" size="sm" color="brand">{r.userCount} user{r.userCount === 1 ? '' : 's'}</Badge>
                 </Group>
-                <Text size="sm" c="sand.6" mt={4}>
-                  {r.permissions.length === 0
-                    ? 'No permissions granted — self-service access only.'
-                    : catalogue.filter((p) => r.permissions.includes(p.key)).map((p) => p.label).join(', ')}
-                </Text>
+                <Text size="sm" c="sand.6" mt={4}>{summaryFor(r)}</Text>
               </div>
               <Group gap="xs">
                 <Button size="compact-sm" variant="subtle" leftSection={<IconPencil size={13} />} onClick={() => openEdit(r)}>
@@ -172,26 +240,57 @@ export function SettingsRolesPage() {
         );
       })}
 
-      <Modal opened={formOpen} onClose={() => setFormOpen(false)} title={editing ? 'Edit role' : 'New role'} centered size="md">
+      <Modal opened={formOpen} onClose={() => setFormOpen(false)} title={editing ? 'Edit role' : 'New role'} centered size="lg">
         <form onSubmit={form.onSubmit((v) => void submit(v))}>
           <Stack gap="md">
+            {!editing && templates.length > 0 && (
+              <Select
+                label="Start from a template" placeholder="Choose a job function (optional)" clearable
+                data={templates.map((t) => ({ value: t.name, label: t.name }))}
+                value={templateName}
+                onChange={applyTemplate}
+                description={templates.find((t) => t.name === templateName)?.description}
+              />
+            )}
             <TextInput
               label="Name" withAsterisk placeholder="Payroll Clerk"
               disabled={editing?.name === 'Admin'}
               description={editing?.name === 'Admin' ? "The Admin role can't be renamed." : undefined}
               {...form.getInputProps('name')}
             />
-            <Checkbox.Group
-              label="Permissions"
-              value={form.values.permissions}
-              onChange={(v) => form.setFieldValue('permissions', v)}
-            >
-              <Stack gap="xs" mt="xs">
-                {catalogue.map((p) => (
-                  <Checkbox key={p.key} value={p.key} label={p.label} description={p.description} />
-                ))}
-              </Stack>
-            </Checkbox.Group>
+            <Stack gap="sm">
+              <Text size="sm" fw={600}>Permissions</Text>
+              {resourceGroups.map(({ resource, items }) => (
+                <Card key={resource} p="md" radius="md" withBorder bg="sand.0">
+                  <Text size="sm" fw={600} mb="xs">{resource}</Text>
+                  <Stack gap="xs">
+                    {items.map((p) => {
+                      const checked = isChecked(p.key);
+                      return (
+                        <Group key={p.key} justify="space-between" align="flex-start" wrap="wrap" gap="sm">
+                          <Checkbox
+                            checked={checked}
+                            onChange={(e) => toggleKey(p, e.currentTarget.checked)}
+                            label={p.label}
+                            description={p.description}
+                            maw={460}
+                          />
+                          {checked && p.scopeable && (
+                            <Select
+                              w={190} size="xs" allowDeselect={false}
+                              data={SCOPE_OPTIONS}
+                              value={scopeOf(p.key)}
+                              onChange={(v) => setScope(p.key, (v as Scope) ?? 'ALL')}
+                              aria-label={`Scope for ${p.label}`}
+                            />
+                          )}
+                        </Group>
+                      );
+                    })}
+                  </Stack>
+                </Card>
+              ))}
+            </Stack>
             {formError && <Text size="sm" c="red">{formError}</Text>}
             <Group justify="flex-end">
               <Button variant="default" onClick={() => setFormOpen(false)}>Cancel</Button>

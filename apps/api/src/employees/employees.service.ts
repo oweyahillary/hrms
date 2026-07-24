@@ -10,7 +10,8 @@ import { isPiiPrivileged, presentPii } from './employee-pii';
 import { EMPLOYEE_ANON_MARKER } from './anonymization';
 import { formatEmployeeNumber } from './employee-number';
 import { getRequestContext } from '../common/context/request-context';
-import { ROLE_PERMISSION_DEFAULTS } from '../auth/permissions';
+import { ROLE_PERMISSION_DEFAULTS, scopeFor } from '../auth/permissions';
+import { DepartmentScopeService } from '../auth/department-scope.service';
 import type { AuthUser } from '../auth/decorators/current-user.decorator';
 import type { CreateEmployeeDto } from './dto/create-employee.dto';
 import type { UpdateEmployeeDto } from './dto/update-employee.dto';
@@ -73,7 +74,13 @@ export class EmployeesService {
     @Inject(PRISMA) private readonly prisma: ExtendedPrismaClient,
     private readonly crypto: CryptoService,
     private readonly passwords: PasswordService,
+    private readonly deptScope: DepartmentScopeService,
   ) {}
+
+  /** Empty page, same shape as a real result — used to fail CLOSED for an OWN_DEPARTMENT actor with no resolvable department. */
+  private emptyPage(query: ListEmployeesDto) {
+    return { data: [], page: query.page, pageSize: query.pageSize, total: 0, totalPages: 1 };
+  }
 
   /**
    * Read the org's numbering config without consuming a number.
@@ -185,10 +192,22 @@ export class EmployeesService {
     }
   }
 
-  async list(query: ListEmployeesDto) {
+  async list(query: ListEmployeesDto, actor: AuthUser) {
     const where: Record<string, unknown> = {};
     if (query.status) where.employmentStatus = query.status;
     if (query.departmentId) where.departmentId = query.departmentId;
+
+    // employees.view scoped to OWN_DEPARTMENT: force the filter to the
+    // actor's own department, narrowing (never widening) whatever
+    // departmentId they asked for. No linked employee/department -> FAIL
+    // CLOSED (empty page), never "everyone".
+    if (scopeFor(actor.permissions, 'employees.view') === 'OWN_DEPARTMENT') {
+      const ownDeptId = await this.deptScope.ownDepartmentId(actor.userId);
+      if (!ownDeptId) return this.emptyPage(query);
+      if (query.departmentId && query.departmentId !== ownDeptId) return this.emptyPage(query);
+      where.departmentId = ownDeptId;
+    }
+
     if (query.q) {
       // Plaintext columns only. The tenant extension adds organizationId at the
       // top level of `where`, which ANDs with this OR block — so search can
@@ -230,6 +249,14 @@ export class EmployeesService {
       include: { user: { select: { email: true, isActive: true, role: { select: { name: true } } } } },
     })) as unknown as EmployeeRow | null;
     if (!row) throw new NotFoundException('Employee not found');
+
+    if (scopeFor(actor.permissions, 'employees.view') === 'OWN_DEPARTMENT') {
+      const ownDeptId = await this.deptScope.ownDepartmentId(actor.userId);
+      // Same 404 as "doesn't exist" — an out-of-department id shouldn't be
+      // distinguishable from a nonexistent one to a scoped caller.
+      if (!ownDeptId || row.departmentId !== ownDeptId) throw new NotFoundException('Employee not found');
+    }
+
     return this.toResponse(row, actor);
   }
 

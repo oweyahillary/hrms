@@ -20,7 +20,7 @@ import {
 import { listEmployees } from '../api/employees';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import { hasPermission } from '../auth/permissions';
+import { hasAnyPermission } from '../auth/permissions';
 import { ErrorCard } from '../components/ErrorCard';
 import { kes } from '../utils/money';
 
@@ -114,7 +114,9 @@ export function PayrollRunDetailPage() {
   const { id = '' } = useParams();
   const location = useLocation();
   const { user } = useAuth();
-  const allowed = hasPermission(user?.permissions, 'payroll.run');
+  // Matches the API's view gate (@AnyPermission on payroll.view/run/finalize)
+  // — a view-only or finalize-only holder still needs to see the run.
+  const allowed = hasAnyPermission(user?.permissions, ['payroll.view', 'payroll.run', 'payroll.finalize']);
 
   const [run, setRun] = useState<PayrollRunDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -164,7 +166,14 @@ export function PayrollRunDetailPage() {
     void (async () => {
       setLoading(true);
       try {
-        const [r, map] = await Promise.all([getPayrollRun(id), loadEmployeeMap()]);
+        // Independent of the run itself — a role that can view payroll but
+        // not the employee directory (e.g. a Payroll Officer whose employees.view
+        // was later revoked) still sees the run; empLabel() already falls
+        // back to a placeholder for any id missing from the map.
+        const [r, map] = await Promise.all([
+          getPayrollRun(id),
+          loadEmployeeMap().catch(() => new Map<string, EmpInfo>()),
+        ]);
         if (cancelled) return;
         setRun(r);
         setEmpMap(map);
