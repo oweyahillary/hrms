@@ -3,19 +3,24 @@ import { Link } from 'react-router-dom';
 import { Button, Center, Stack, Text, ThemeIcon, Title } from '@mantine/core';
 import { IconLock } from '@tabler/icons-react';
 import { useAuth } from './AuthContext';
+import { hasAnyPermission } from './permissions';
 
 /**
  * UX-only route guard — the API already enforces the real boundary, this just
  * stops a page a user has no access to from ever mounting (and firing a wave
  * of 403s while it tries to load data) in favour of one friendly, consistent
- * screen. `check` is one of auth/roles.ts's predicates (canManageEmployees,
- * canManageOrg) — the single source of truth for who can do what, shared with
- * the nav so a route and its nav link can never disagree.
+ * screen. `permission` is one key or several (ANY match is enough), checked
+ * against the SAME permission set the API embedded in the session at
+ * login/refresh — the single source of truth, shared with the nav so a route
+ * and its nav link can never disagree.
  */
-export function RequireRole({ check, children }: { check: (role?: string) => boolean; children: ReactNode }) {
+export function RequirePermission({ permission, children }: {
+  permission: string | string[]; children: ReactNode;
+}) {
   const { user } = useAuth();
+  const required = Array.isArray(permission) ? permission : [permission];
 
-  if (check(user?.role)) return <>{children}</>;
+  if (hasAnyPermission(user?.permissions, required)) return <>{children}</>;
 
   return (
     <Center py={80}>

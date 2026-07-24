@@ -7,7 +7,7 @@ import { IconPlus, IconReportMoney, IconArrowUpRight } from '@tabler/icons-react
 import { listPayrollRuns, type PayrollRunListItem, type PayrollRunStatus, type PayrollRunType } from '../api/payroll';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import { canManageEmployees } from '../auth/roles';
+import { hasPermission } from '../auth/permissions';
 import { ErrorCard } from '../components/ErrorCard';
 
 const STATUS_COLOR: Record<PayrollRunStatus, string> = {
@@ -33,7 +33,7 @@ function fmtDateTime(iso: string): string {
 export function PayrollRunsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const allowed = canManageEmployees(user?.role);
+  const allowed = hasPermission(user?.permissions, 'payroll.run');
 
   const [runs, setRuns] = useState<PayrollRunListItem[]>([]);
   const [loading, setLoading] = useState(true);

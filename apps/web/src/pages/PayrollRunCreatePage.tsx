@@ -11,7 +11,7 @@ import { createPayrollRun, type SkippedEmployee } from '../api/payroll';
 import { listEmployees, type EmployeeListRow } from '../api/employees';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import { canManageEmployees } from '../auth/roles';
+import { hasPermission } from '../auth/permissions';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -29,7 +29,7 @@ interface FormValues {
 export function PayrollRunCreatePage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const allowed = canManageEmployees(user?.role);
+  const allowed = hasPermission(user?.permissions, 'payroll.run');
 
   const now = new Date();
   const [employees, setEmployees] = useState<EmployeeListRow[]>([]);

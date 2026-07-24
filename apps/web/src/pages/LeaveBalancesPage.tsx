@@ -15,7 +15,7 @@ import {
 import { listEmployees, type EmployeeListRow } from '../api/employees';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import { canManageEmployees } from '../auth/roles';
+import { hasPermission } from '../auth/permissions';
 import { ErrorCard } from '../components/ErrorCard';
 
 const YEAR_NOW = new Date().getUTCFullYear();
@@ -25,7 +25,7 @@ const YEARS = [YEAR_NOW - 2, YEAR_NOW - 1, YEAR_NOW, YEAR_NOW + 1].map((y) => ({
 
 export function LeaveBalancesPage() {
   const { user } = useAuth();
-  const isHr = canManageEmployees(user?.role);
+  const isHr = hasPermission(user?.permissions, 'leave.manage');
 
   const [employees, setEmployees] = useState<EmployeeListRow[]>([]);
   const [types, setTypes] = useState<LeaveType[]>([]);

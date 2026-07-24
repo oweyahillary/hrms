@@ -16,6 +16,31 @@ export interface RoleOption {
   name: string;
 }
 
+export interface PermissionDef {
+  key: string;
+  label: string;
+  description: string;
+}
+
+export interface AdminRole {
+  id: string;
+  name: string;
+  permissions: string[];
+  /** One of the historically-known role names (Admin, HR Manager, HR Officer, Manager, Employee) — editable but not deletable. */
+  isSeeded: boolean;
+  userCount: number;
+}
+
+export interface CreateRoleInput {
+  name: string;
+  permissions: string[];
+}
+
+export interface UpdateRoleInput {
+  name?: string;
+  permissions?: string[];
+}
+
 export interface CreateUserInput {
   email: string;
   roleId: string;
@@ -44,6 +69,20 @@ export const listUsers = (params: { isActive?: boolean; roleId?: string } = {}):
   })}`);
 
 export const listRoles = (): Promise<RoleOption[]> => api<RoleOption[]>('/roles');
+
+/** The full permission catalogue, for the Settings > Roles checkbox editor. */
+export const getPermissionCatalogue = (): Promise<PermissionDef[]> => api<PermissionDef[]>('/roles/catalogue');
+
+export const listAdminRoles = (): Promise<AdminRole[]> => api<AdminRole[]>('/roles');
+
+export const createRole = (input: CreateRoleInput): Promise<AdminRole> =>
+  api<AdminRole>('/roles', { method: 'POST', body: JSON.stringify(input) });
+
+export const updateRole = (id: string, input: UpdateRoleInput): Promise<AdminRole> =>
+  api<AdminRole>(`/roles/${id}`, { method: 'PATCH', body: JSON.stringify(input) });
+
+export const deleteRole = (id: string): Promise<{ success: boolean }> =>
+  api<{ success: boolean }>(`/roles/${id}`, { method: 'DELETE' });
 
 export const createUser = (input: CreateUserInput): Promise<CreatedUser> =>
   api<CreatedUser>('/users', { method: 'POST', body: JSON.stringify(input) });

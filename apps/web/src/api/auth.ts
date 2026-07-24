@@ -1,7 +1,7 @@
 import { api, setAccessToken, setRefreshToken, getRefreshToken } from './client';
 
 export interface SessionUser {
-  id: string; email: string; role: string; organizationId: string;
+  id: string; email: string; role: string; permissions: string[]; organizationId: string;
   organizationName?: string;
 }
 export interface Session {

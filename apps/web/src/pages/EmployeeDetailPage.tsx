@@ -19,7 +19,7 @@ import {
 } from '../api/lookups';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import { canManageEmployees } from '../auth/roles';
+import { hasPermission } from '../auth/permissions';
 import { ErrorCard } from '../components/ErrorCard';
 import { SalarySection } from '../components/SalarySection';
 import { SeveranceSection } from '../components/SeveranceSection';
@@ -111,7 +111,7 @@ export function EmployeeDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
   const { user } = useAuth();
-  const canManage = canManageEmployees(user?.role);
+  const canManage = hasPermission(user?.permissions, 'employees.write');
   // Granting 'Admin' is restricted to Admin actors — enforced server-side too.
   const grantableRoles = useMemo(
     () => GRANTABLE_ROLE_NAMES.filter((r) => r !== 'Admin' || user?.role === 'Admin'),

@@ -9,7 +9,7 @@ import {
 } from '@tabler/icons-react';
 import type { Icon } from '@tabler/icons-react';
 import { useAuth } from '../auth/AuthContext';
-import { canManageEmployees, canManageOrg } from '../auth/roles';
+import { hasAnyPermission, isHrCapable } from '../auth/permissions';
 import { BrandMark } from './BrandMark';
 
 interface NavChild {
@@ -22,13 +22,15 @@ interface NavChild {
    * location merely starts with it at a '/' boundary.
    */
   exact?: boolean;
-  /** Hide from anyone who can't administer leave configuration. */
-  hrOnly?: boolean;
+  /** Permission(s) required to show this child (ANY match). Omit to always show once the parent section is visible. */
+  permission?: string | string[];
 }
 interface NavItem {
   to: string;
   label: string;
   icon: Icon;
+  /** Permission(s) required to show this item (ANY match). Omit for items visible to everyone (e.g. Dashboard). */
+  permission?: string | string[];
   children?: NavChild[];
 }
 
@@ -38,27 +40,28 @@ const NAV: NavItem[] = [
 
 /**
  * The org-wide Employees directory and the admin Leave section (approvals,
- * balances administration, leave types) — HR_MANAGEMENT_ROLES only. A non-HR
- * employee gets the self-service equivalents instead (SELF_SERVICE_NAV /
- * MY_SPACE_NAV below), not these.
+ * balances administration, leave types) — each gated on the specific
+ * permission its API routes require. A non-HR employee gets the self-service
+ * equivalents instead (SELF_SERVICE_NAV / MY_SPACE_NAV below), not these.
  */
 const HR_NAV: NavItem[] = [
-  { to: '/employees', label: 'Employees', icon: IconUsers },
+  { to: '/employees', label: 'Employees', icon: IconUsers, permission: 'employees.write' },
   {
     to: '/leave',
     label: 'Leave',
     icon: IconCalendarStats,
+    permission: 'leave.manage',
     children: [
       // '/leave' is both the section and the requests screen, so it has to match
       // exactly or it would light up on every child route.
       { to: '/leave', label: 'Requests', exact: true },
       { to: '/leave/apply', label: 'Apply for leave' },
       { to: '/leave/balances', label: 'Balances' },
-      { to: '/leave/types', label: 'Leave types', hrOnly: true },
+      { to: '/leave/types', label: 'Leave types' },
     ],
   },
-  { to: '/shifts', label: 'Shifts', icon: IconClockHour4 },
-  { to: '/attendance', label: 'Attendance', icon: IconClipboardCheck },
+  { to: '/shifts', label: 'Shifts', icon: IconClockHour4, permission: 'shifts.manage' },
+  { to: '/attendance', label: 'Attendance', icon: IconClipboardCheck, permission: 'attendance.manage' },
 ];
 
 /**
@@ -104,30 +107,37 @@ const MY_SPACE_NAV: NavItem[] = [
 ];
 
 /**
- * Payroll is entirely HR_MANAGEMENT_ROLES-gated on the API — every route under
- * it 403s for anyone else. Keep it out of the base NAV and show it only to
+ * Payroll is entirely gated on the API — every route under it 403s without
+ * one of these permissions. Keep it out of the base NAV and show it only to
  * roles that can actually use it, the same way ADMIN_NAV below hides Settings.
  */
 const PAYROLL_NAV: NavItem[] = [
   // Flat single entry: the Run / Setup / Reports sub-navigation lives in a tab
   // bar at the top of the Payroll section (PayrollLayout), not in the sidebar.
-  { to: '/payroll', label: 'Payroll', icon: IconReportMoney },
+  { to: '/payroll', label: 'Payroll', icon: IconReportMoney, permission: ['payroll.run', 'payroll.finalize', 'payroll.manage'] },
 ];
 
-/** Settings is organisation administration — only for roles that can manage it. */
+const SETTINGS_PERMS = [
+  'settings.manage', 'users.manage', 'org_structure.manage', 'shifts.manage', 'attendance.manage',
+];
+
+/** Settings is organisation administration — only for roles that can manage some part of it. */
 const ADMIN_NAV: NavItem[] = [
   {
     to: '/settings',
     label: 'Settings',
     icon: IconSettings,
+    permission: SETTINGS_PERMS,
     children: [
-      { to: '/settings', label: 'Organisation', exact: true },
-      { to: '/settings/leave', label: 'Leave approval' },
-      { to: '/settings/numbering', label: 'Employee numbers' },
-      { to: '/settings/payroll', label: 'Payroll' },
-      { to: '/settings/shifts', label: 'Shift definitions' },
-      { to: '/settings/devices', label: 'Devices' },
-      { to: '/settings/users', label: 'Users' },
+      { to: '/settings', label: 'Organisation', exact: true, permission: 'settings.manage' },
+      { to: '/settings/leave', label: 'Leave approval', permission: 'settings.manage' },
+      { to: '/settings/numbering', label: 'Employee numbers', permission: 'settings.manage' },
+      { to: '/settings/payroll', label: 'Payroll', permission: 'settings.manage' },
+      { to: '/settings/departments', label: 'Departments', permission: 'org_structure.manage' },
+      { to: '/settings/shifts', label: 'Shift definitions', permission: 'shifts.manage' },
+      { to: '/settings/devices', label: 'Devices', permission: 'attendance.manage' },
+      { to: '/settings/users', label: 'Users', permission: 'users.manage' },
+      { to: '/settings/roles', label: 'Roles', permission: 'users.manage' },
     ],
   },
 ];
@@ -136,6 +146,7 @@ export function AppShellLayout({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth();
   const location = useLocation();
   const initials = (user?.email ?? '?').slice(0, 2).toUpperCase();
+  const perms = user?.permissions;
 
   // Shared look for every nav row: a touch more breathing room than Mantine's
   // default, and fully rounded so the brand-tinted "active" state (already
@@ -173,11 +184,13 @@ export function AppShellLayout({ children }: { children: ReactNode }) {
         <ScrollArea>
           {[
             ...NAV,
-            ...(canManageEmployees(user?.role) ? HR_NAV : []),
-            ...(canManageEmployees(user?.role) ? PAYROLL_NAV : []),
-            ...(canManageOrg(user?.role) ? ADMIN_NAV : []),
-            ...(canManageEmployees(user?.role) ? MY_SPACE_NAV : SELF_SERVICE_NAV),
-          ].map((item) => {
+            ...HR_NAV,
+            ...PAYROLL_NAV,
+            ...ADMIN_NAV,
+            ...(isHrCapable(perms) ? MY_SPACE_NAV : SELF_SERVICE_NAV),
+          ]
+            .filter((item) => !item.permission || hasAnyPermission(perms, Array.isArray(item.permission) ? item.permission : [item.permission]))
+            .map((item) => {
             const inSection = item.to === '/'
               ? location.pathname === '/'
               : location.pathname.startsWith(item.to);
@@ -208,7 +221,7 @@ export function AppShellLayout({ children }: { children: ReactNode }) {
                 styles={navItemStyles}
               >
                 {item.children
-                  .filter((child) => !child.hrOnly || canManageEmployees(user?.role))
+                  .filter((child) => !child.permission || hasAnyPermission(perms, Array.isArray(child.permission) ? child.permission : [child.permission]))
                   .map((child) => (
                     <NavLink
                       key={child.to} component={RouterNavLink} to={child.to} label={child.label}
